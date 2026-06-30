@@ -1,0 +1,840 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Buddy's Daily Quest</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;700;800&family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#FF6B6B">
+<link rel="apple-touch-icon" href="icon-192.png">
+
+<!-- ===== ONESIGNAL WEB PUSH — STEP TO DO ===========================
+  1. Create a free account at onesignal.com
+  2. Create a new app, choose "Web Push", and follow their setup wizard
+  3. It gives you a script snippet with YOUR_ONESIGNAL_APP_ID below —
+     paste your real App ID in place of the placeholder text.
+  4. It also gives you the exact OneSignalSDKWorker.js content —
+     replace the placeholder file of that name with theirs.
+=================================================================== -->
+<script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>
+<script>
+  window.OneSignalDeferred = window.OneSignalDeferred || [];
+  OneSignalDeferred.push(async function(OneSignal) {
+    await OneSignal.init({
+      appId: "YOUR_ONESIGNAL_APP_ID", // <-- replace with your real App ID
+    });
+  });
+</script>
+<style>
+  :root{
+    --bg1:#EAF2FF;
+    --bg2:#FDF4FF;
+    --coral:#FF6B6B;
+    --coral-dark:#E5484D;
+    --gold:#FFD166;
+    --mint:#06D6A0;
+    --navy:#1B1F3B;
+    --card:#FFFFFF;
+    --purple:#8B7FE8;
+    --shadow: 0 8px 24px rgba(27,31,59,0.10);
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color: transparent;}
+  body{
+    margin:0;
+    font-family:'Nunito', sans-serif;
+    background: radial-gradient(circle at 20% 0%, var(--bg2), var(--bg1) 60%);
+    color: var(--navy);
+    min-height:100vh;
+    overscroll-behavior:none;
+  }
+  h1,h2,h3,.display{ font-family:'Baloo 2', sans-serif; }
+  #app{ max-width:640px; margin:0 auto; padding:18px 16px 100px; min-height:100vh; position:relative; }
+
+  /* ---- Top bar ---- */
+  .topbar{ display:flex; align-items:center; justify-content:space-between; margin-bottom:14px; }
+  .points-badge{
+    background:var(--card); border-radius:999px; padding:8px 16px;
+    box-shadow:var(--shadow); display:flex; align-items:center; gap:8px;
+    font-weight:800; font-size:15px;
+  }
+  .streak-badge{ background:linear-gradient(135deg,#FFD166,#FF6B6B); color:white; border-radius:999px; padding:8px 14px; font-weight:800; font-size:14px; box-shadow:var(--shadow);}
+  .gear-btn{
+    width:40px; height:40px; border-radius:50%; background:var(--card); border:none;
+    box-shadow:var(--shadow); font-size:18px; display:flex; align-items:center; justify-content:center;
+    color: var(--navy); opacity:0.55;
+  }
+
+  /* ---- Buddy hero ---- */
+  .buddy-hero{ text-align:center; margin:6px 0 22px; }
+  .buddy-avatar-wrap{
+    width:140px; height:140px; margin:0 auto 10px; border-radius:50%;
+    background: linear-gradient(160deg, #fff, #F0F4FF);
+    display:flex; align-items:center; justify-content:center;
+    font-size:74px; box-shadow: var(--shadow);
+    border: 5px solid white;
+    animation: float 3.2s ease-in-out infinite;
+  }
+  @keyframes float{ 0%,100%{ transform:translateY(0) } 50%{ transform:translateY(-8px) } }
+  .speech-bubble{
+    background:var(--card); border-radius:20px; padding:14px 18px; box-shadow:var(--shadow);
+    display:inline-block; max-width:90%; font-weight:700; font-size:15.5px; position:relative; line-height:1.4;
+  }
+  .speech-bubble:after{
+    content:''; position:absolute; top:-8px; left:50%; transform:translateX(-50%) rotate(45deg);
+    width:16px; height:16px; background:var(--card);
+  }
+  .buddy-name{ font-size:22px; font-weight:800; margin:10px 0 2px; }
+
+  /* progress ring of stars */
+  .star-row{ display:flex; justify-content:center; gap:4px; margin:10px 0 4px; font-size:18px; }
+  .star-row span{ opacity:0.25; transition:opacity .3s, transform .3s;}
+  .star-row span.lit{ opacity:1; transform:scale(1.15); }
+
+  /* ---- Section labels ---- */
+  .section-label{ font-family:'Baloo 2'; font-weight:700; font-size:14px; color:var(--navy); opacity:0.55;
+    text-transform:uppercase; letter-spacing:0.06em; margin: 18px 4px 8px; }
+
+  /* ---- Task cards ---- */
+  .task-card{
+    background:var(--card); border-radius:18px; padding:14px 16px; margin-bottom:10px;
+    display:flex; align-items:center; gap:14px; box-shadow:var(--shadow);
+    border: 2px solid transparent; transition: transform .15s ease;
+    cursor:pointer; user-select:none;
+  }
+  .task-card:active{ transform:scale(0.97); }
+  .task-card.due{ border-color: var(--coral); animation:pulse 1.4s infinite; }
+  @keyframes pulse{ 0%,100%{ box-shadow:0 0 0 0 rgba(255,107,107,0.35);} 50%{ box-shadow:0 0 0 8px rgba(255,107,107,0);} }
+  .task-card.done{ opacity:0.55; }
+  .task-card.done .task-name{ text-decoration: line-through; }
+  .task-emoji{
+    width:46px; height:46px; border-radius:14px; background:#F4F1FF; flex-shrink:0;
+    display:flex; align-items:center; justify-content:center; font-size:24px;
+  }
+  .task-card.done .task-emoji{ background:#E6FBF4; }
+  .task-info{ flex:1; min-width:0; }
+  .task-name{ font-weight:800; font-size:15.5px; }
+  .task-meta{ font-size:13px; opacity:0.6; font-weight:700; margin-top:2px; }
+  .task-points{ font-weight:800; color:var(--purple); font-size:14px; flex-shrink:0; }
+  .check-circle{
+    width:30px; height:30px; border-radius:50%; border:2.5px solid #DDD; flex-shrink:0;
+    display:flex; align-items:center; justify-content:center; font-size:16px; color:white;
+  }
+  .check-circle.checked{ background:var(--mint); border-color:var(--mint); }
+
+  .empty-state{ text-align:center; padding:40px 20px; opacity:0.6; font-weight:700; }
+
+  /* ---- Bottom nav ---- */
+  .bottom-bar{
+    position:fixed; bottom:0; left:0; right:0; display:flex; justify-content:center; padding:14px;
+    pointer-events:none;
+  }
+  .bottom-pill{
+    background:var(--card); box-shadow:var(--shadow); border-radius:999px; padding:8px; display:flex; gap:6px;
+    pointer-events:all;
+  }
+  .bottom-pill button{
+    border:none; background:transparent; padding:10px 18px; border-radius:999px; font-weight:800;
+    font-family:'Baloo 2'; font-size:14px; color:var(--navy); opacity:0.5;
+  }
+  .bottom-pill button.active{ background:var(--coral); color:white; opacity:1; }
+
+  /* ---- Modal / overlay ---- */
+  .overlay{
+    position:fixed; inset:0; background:rgba(27,31,59,0.45); display:flex; align-items:flex-end;
+    justify-content:center; z-index:50; backdrop-filter: blur(2px);
+  }
+  .overlay.center{ align-items:center; padding:20px;}
+  .sheet{
+    background:var(--bg1); width:100%; max-width:640px; border-radius:24px 24px 0 0; padding:20px 18px 30px;
+    max-height:85vh; overflow-y:auto;
+  }
+  .overlay.center .sheet{ border-radius:24px; max-height:80vh; }
+  .sheet h2{ margin:0 0 14px; font-size:20px; }
+  label{ font-weight:800; font-size:13px; opacity:0.7; display:block; margin: 14px 0 6px; }
+  input[type=text], input[type=time], input[type=number]{
+    width:100%; padding:12px 14px; border-radius:12px; border:2px solid #E3E8F5; font-size:15px;
+    font-family:'Nunito'; background:white;
+  }
+  .emoji-grid{ display:flex; flex-wrap:wrap; gap:8px; margin-top:6px; }
+  .emoji-pick{
+    width:42px; height:42px; border-radius:12px; background:white; border:2px solid #E3E8F5; font-size:20px;
+    display:flex; align-items:center; justify-content:center;
+  }
+  .emoji-pick.sel{ border-color:var(--coral); background:#FFF0F0; }
+  .btn{
+    border:none; border-radius:14px; padding:13px 18px; font-weight:800; font-family:'Baloo 2'; font-size:15px;
+    width:100%; margin-top:16px; box-shadow:var(--shadow);
+  }
+  .btn-primary{ background:var(--coral); color:white; }
+  .btn-secondary{ background:white; color:var(--navy); }
+  .btn-ghost{ background:transparent; color:var(--coral-dark); box-shadow:none; text-decoration:underline; font-size:13px;}
+  .close-x{ position:absolute; top:14px; right:16px; font-size:20px; opacity:0.5; background:none; border:none; }
+
+  .admin-task-row{
+    background:white; border-radius:14px; padding:10px 12px; display:flex; align-items:center; gap:10px;
+    margin-bottom:8px; box-shadow:var(--shadow);
+  }
+  .admin-task-row .t-emoji{ font-size:20px; width:32px; text-align:center; }
+  .admin-task-row .t-info{ flex:1; }
+  .admin-task-row .t-name{ font-weight:800; font-size:14px; }
+  .admin-task-row .t-meta{ font-size:12px; opacity:0.55; font-weight:700; }
+  .icon-btn{ background:#F1F2F8; border:none; width:32px; height:32px; border-radius:10px; font-size:14px; }
+
+  .ach-grid{ display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:10px; }
+  .ach-card{ background:white; border-radius:16px; padding:12px; text-align:center; box-shadow:var(--shadow); }
+  .ach-card.locked{ opacity:0.35; }
+  .ach-emoji{ font-size:28px; }
+  .ach-title{ font-weight:800; font-size:12.5px; margin-top:4px; }
+
+  .toast{
+    position:fixed; top:18px; left:50%; transform:translateX(-50%); background:var(--navy); color:white;
+    padding:12px 18px; border-radius:14px; font-weight:700; font-size:14px; z-index:80; box-shadow:var(--shadow);
+    max-width:88%; text-align:center;
+  }
+
+  .celebrate-overlay{
+    position:fixed; inset:0; z-index:90; display:flex; align-items:center; justify-content:center;
+    pointer-events:none;
+  }
+  .celebrate-card{
+    background:white; border-radius:24px; padding:28px 34px; text-align:center; box-shadow:0 20px 50px rgba(0,0,0,0.25);
+    animation: pop .4s cubic-bezier(.34,1.56,.64,1);
+  }
+  @keyframes pop{ 0%{ transform:scale(0.5); opacity:0;} 100%{ transform:scale(1); opacity:1;} }
+  .celebrate-card .big{ font-size:54px; }
+  .sparkle{ position:absolute; font-size:22px; animation: spark 1s ease-out forwards; }
+  @keyframes spark{ 0%{ transform:translate(0,0) scale(0.6); opacity:1;} 100%{ transform: var(--end) scale(1.1); opacity:0;} }
+
+  .gate-q{ font-size:22px; font-weight:800; text-align:center; margin:18px 0; }
+  .gate-input{ text-align:center; font-size:22px; font-weight:800; }
+</style>
+</head>
+<body>
+<div id="app"><div class="empty-state">Loading Buddy… 🐾</div></div>
+
+<script>
+const STORE_KEY = 'buddy-app-state-v1';
+const QUICK_EMOJIS = ['🪥','🍎','📚','🛏️','🧹','🎒','👕','🚿','🏃','🎨','🍽️','🧸','🎵','💧','✏️','🧦','🐶','⏰','🧴','🎮'];
+const AVATARS = ['🦊','🐵','🐯','🦁','🐰','🐼','🐨','🐸','🦄','🐲','🐱','🐻'];
+
+const ACHIEVEMENTS = [
+  { id:'first_task', emoji:'🌟', title:'First Steps', desc:'Complete your first task', test: s => totalCompletedEver(s) >= 1 },
+  { id:'perfect_day', emoji:'🏆', title:'Perfect Day', desc:'Finish every task in a day', test: s => hadPerfectDay(s) },
+  { id:'streak3', emoji:'🔥', title:'3-Day Streak', desc:'3 days in a row', test: s => s.streak >= 3 },
+  { id:'streak7', emoji:'🔥🔥', title:'Weekly Wonder', desc:'7 days in a row', test: s => s.streak >= 7 },
+  { id:'points100', emoji:'💯', title:'Century Club', desc:'Earn 100 total points', test: s => lifetimePoints(s) >= 100 },
+  { id:'points500', emoji:'👑', title:'Buddy Champion', desc:'Earn 500 total points', test: s => lifetimePoints(s) >= 500 },
+];
+
+function todayKey(){
+  const d = new Date();
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+}
+function nowHM(){
+  const d = new Date();
+  return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');
+}
+function defaultState(){
+  return {
+    buddy: { name:'Buddy', avatar:'🦊', setup:false },
+    tasks: [
+      { id:'t1', time:'07:30', name:'Brush Teeth', emoji:'🪥', points:10 },
+      { id:'t2', time:'08:00', name:'Eat Breakfast', emoji:'🍎', points:10 },
+      { id:'t3', time:'09:00', name:'Reading Time', emoji:'📚', points:15 },
+      { id:'t4', time:'16:00', name:'Tidy Up Room', emoji:'🧹', points:15 },
+      { id:'t5', time:'19:30', name:'Get Ready for Bed', emoji:'🛏️', points:10 },
+    ],
+    progress: {}, // { 'YYYY-MM-DD': { entries: { taskId: points }, } }
+    streak: 0,
+    lastDate: null,
+    unlocked: [],
+    lastWeeklySummaryShown: null,
+  };
+}
+
+let state = null;
+let view = 'buddy'; // 'buddy' | 'admin'
+let adminTab = 'tasks'; // 'tasks' | 'buddy' | 'achievements'
+let notifiedThisTick = new Set();
+let editingTaskId = null;
+
+function lifetimePoints(s){
+  let total = 0;
+  for (const k in s.progress) {
+    const entries = s.progress[k].entries || {};
+    for (const tid in entries) total += entries[tid];
+  }
+  return total;
+}
+function totalCompletedEver(s){
+  let c = 0;
+  for (const k in s.progress) c += Object.keys(s.progress[k].entries || {}).length;
+  return c;
+}
+function hadPerfectDay(s){
+  for (const k in s.progress) {
+    const entries = Object.keys(s.progress[k].entries || {});
+    if (entries.length > 0 && entries.length >= s.tasks.length && s.tasks.length > 0) return true;
+  }
+  return false;
+}
+
+function dateKeyOffset(daysAgo){
+  const d = new Date();
+  d.setDate(d.getDate() - daysAgo);
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+}
+function weekdayLabel(daysAgo){
+  const d = new Date();
+  d.setDate(d.getDate() - daysAgo);
+  return d.toLocaleDateString(undefined, { weekday: 'short' });
+}
+// Stats for the week just finished: Sunday through Friday, recapped Saturday morning.
+function getWeekStats(){
+  const days = [];
+  let totalPoints = 0, totalTasks = 0, perfectDays = 0, bestDay = null;
+  for (let i = 1; i <= 6; i++) { // yesterday (Fri) back through 6 days ago (Sun)
+    const key = dateKeyOffset(i);
+    const entries = (state.progress[key] && state.progress[key].entries) || {};
+    const pts = Object.values(entries).reduce((a,b)=>a+b,0);
+    const count = Object.keys(entries).length;
+    totalPoints += pts; totalTasks += count;
+    if (count > 0 && count >= state.tasks.length) perfectDays++;
+    if (!bestDay || pts > bestDay.pts) bestDay = { label: weekdayLabel(i), pts };
+    days.push({ label: weekdayLabel(i), pts, count });
+  }
+  days.reverse();
+  return { days, totalPoints, totalTasks, perfectDays, bestDay };
+}
+
+async function loadState(){
+  try {
+    const res = await window.storage.get(STORE_KEY, false);
+    if (res && res.value) {
+      state = JSON.parse(res.value);
+    } else {
+      state = defaultState();
+    }
+  } catch(e) {
+    state = defaultState();
+  }
+  rolloverIfNeeded();
+  if (!state.buddy.setup) { view = 'setup'; }
+  render();
+  if (state.buddy.setup) maybeShowWeeklySummary();
+}
+
+async function saveState(){
+  try {
+    await window.storage.set(STORE_KEY, JSON.stringify(state), false);
+  } catch(e) { console.error('save failed', e); }
+}
+
+function rolloverIfNeeded(){
+  const tk = todayKey();
+  if (state.lastDate && state.lastDate !== tk) {
+    const yEntries = state.progress[state.lastDate] ? Object.keys(state.progress[state.lastDate].entries||{}).length : 0;
+    if (yEntries > 0 && yEntries >= state.tasks.length) {
+      state.streak = (state.streak || 0) + 1;
+    } else {
+      state.streak = 0;
+    }
+  }
+  state.lastDate = tk;
+  if (!state.progress[tk]) state.progress[tk] = { entries: {} };
+  checkAchievements();
+}
+
+function maybeShowWeeklySummary(){
+  const d = new Date();
+  const tk = todayKey();
+  if (d.getDay() === 6 && state.lastWeeklySummaryShown !== tk) { // Saturday
+    state.lastWeeklySummaryShown = tk;
+    saveState();
+    setTimeout(()=> openWeeklySummary(true), 400);
+  }
+}
+
+function checkAchievements(){
+  let newlyUnlocked = [];
+  for (const a of ACHIEVEMENTS) {
+    if (!state.unlocked.includes(a.id) && a.test(state)) {
+      state.unlocked.push(a.id);
+      newlyUnlocked.push(a);
+    }
+  }
+  return newlyUnlocked;
+}
+
+function playChime(){
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const notes = [523.25, 659.25, 783.99];
+    notes.forEach((freq, i) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.value = freq;
+      osc.connect(gain); gain.connect(ctx.destination);
+      const t = ctx.currentTime + i * 0.15;
+      gain.gain.setValueAtTime(0.001, t);
+      gain.gain.exponentialRampToValueAtTime(0.25, t + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + 0.3);
+      osc.start(t); osc.stop(t + 0.32);
+    });
+  } catch(e) {}
+}
+
+function greeting(){
+  const h = new Date().getHours();
+  if (h < 12) return `Good morning! Ready for today's quest? ☀️`;
+  if (h < 17) return `Hey there! Keep up the great work! 🌤️`;
+  return `Evening, champ! Let's finish strong! 🌙`;
+}
+
+function classifyTasks(){
+  const tk = todayKey();
+  const entries = (state.progress[tk] && state.progress[tk].entries) || {};
+  const hm = nowHM();
+  const sorted = [...state.tasks].sort((a,b)=> a.time.localeCompare(b.time));
+  return sorted.map(t => ({
+    ...t,
+    done: entries.hasOwnProperty(t.id),
+    due: !entries.hasOwnProperty(t.id) && t.time <= hm,
+  }));
+}
+
+function todayPoints(){
+  const tk = todayKey();
+  const entries = (state.progress[tk] && state.progress[tk].entries) || {};
+  return Object.values(entries).reduce((a,b)=>a+b,0);
+}
+
+function toggleTask(id){
+  const tk = todayKey();
+  if (!state.progress[tk]) state.progress[tk] = { entries: {} };
+  const entries = state.progress[tk].entries;
+  const task = state.tasks.find(t=>t.id===id);
+  if (!task) return;
+  if (entries.hasOwnProperty(id)) {
+    delete entries[id];
+    saveState(); render();
+  } else {
+    entries[id] = task.points;
+    const newAch = checkAchievements();
+    saveState();
+    celebrate(task, newAch);
+  }
+}
+
+function celebrate(task, newAch){
+  playChime();
+  const root = document.createElement('div');
+  root.className = 'celebrate-overlay';
+  const sparkles = Array.from({length:10}).map(()=>{
+    const angle = Math.random()*360, dist = 60+Math.random()*60;
+    const x = Math.cos(angle*Math.PI/180)*dist, y = Math.sin(angle*Math.PI/180)*dist;
+    const emo = ['⭐','✨','🌟'][Math.floor(Math.random()*3)];
+    return `<span class="sparkle" style="--end:translate(${x}px,${y}px); left:50%; top:42%;">${emo}</span>`;
+  }).join('');
+  root.innerHTML = `
+    ${sparkles}
+    <div class="celebrate-card">
+      <div class="big">👍✨</div>
+      <div style="font-family:'Baloo 2'; font-weight:800; font-size:20px; margin-top:8px;">Awesome job!</div>
+      <div style="font-weight:700; opacity:0.7; margin-top:4px;">${task.name} complete · +${task.points} pts</div>
+    </div>`;
+  document.body.appendChild(root);
+  setTimeout(()=>{ root.remove(); render(); if (newAch && newAch.length) showAchievementToast(newAch); }, 1300);
+}
+
+function showAchievementToast(list){
+  list.forEach((a,i)=>{
+    setTimeout(()=>{
+      const t = document.createElement('div');
+      t.className = 'toast';
+      t.textContent = `${a.emoji} Achievement unlocked: ${a.title}!`;
+      document.body.appendChild(t);
+      setTimeout(()=>t.remove(), 2600);
+    }, i*2800);
+  });
+}
+
+function checkReminders(){
+  const tk = todayKey();
+  if (state.lastDate !== tk) { rolloverIfNeeded(); saveState(); render(); return; }
+  const hm = nowHM();
+  const entries = (state.progress[tk] && state.progress[tk].entries) || {};
+  for (const t of state.tasks) {
+    if (t.time === hm && !entries.hasOwnProperty(t.id)) {
+      const key = tk+'|'+t.id+'|'+hm;
+      if (!notifiedThisTick.has(key)) {
+        notifiedThisTick.add(key);
+        playChime();
+        const banner = document.createElement('div');
+        banner.className = 'toast';
+        banner.textContent = `⏰ Time for: ${t.emoji} ${t.name}!`;
+        document.body.appendChild(banner);
+        setTimeout(()=>banner.remove(), 3500);
+      }
+    }
+  }
+}
+setInterval(checkReminders, 15000);
+
+function openWeeklySummary(isAuto){
+  const stats = getWeekStats();
+  const maxPts = Math.max(1, ...stats.days.map(d=>d.pts));
+  const overlay = document.createElement('div');
+  overlay.className = 'overlay center';
+  overlay.innerHTML = `
+    <div class="sheet" style="text-align:center; position:relative;">
+      <button class="close-x" id="closeWeekly">✕</button>
+      <div style="font-size:48px;">🎉📅</div>
+      <h2 style="margin:4px 0 2px;">${isAuto ? "This Week's Recap!" : 'Weekly Recap'}</h2>
+      <div style="opacity:0.65; font-weight:700; font-size:13px; margin-bottom:14px;">Sunday – Friday</div>
+      <div style="display:flex; gap:10px; margin-bottom:16px;">
+        <div style="flex:1; background:white; border-radius:14px; padding:12px; box-shadow:var(--shadow);">
+          <div style="font-size:22px; font-weight:800; color:var(--purple);">${stats.totalPoints}</div>
+          <div style="font-size:11px; opacity:0.6; font-weight:700;">TOTAL POINTS</div>
+        </div>
+        <div style="flex:1; background:white; border-radius:14px; padding:12px; box-shadow:var(--shadow);">
+          <div style="font-size:22px; font-weight:800; color:var(--mint);">${stats.totalTasks}</div>
+          <div style="font-size:11px; opacity:0.6; font-weight:700;">TASKS DONE</div>
+        </div>
+        <div style="flex:1; background:white; border-radius:14px; padding:12px; box-shadow:var(--shadow);">
+          <div style="font-size:22px; font-weight:800; color:var(--coral);">${stats.perfectDays}</div>
+          <div style="font-size:11px; opacity:0.6; font-weight:700;">PERFECT DAYS</div>
+        </div>
+      </div>
+      <div style="display:flex; align-items:flex-end; gap:8px; justify-content:center; height:90px; margin-bottom:8px;">
+        ${stats.days.map(d=>`
+          <div style="display:flex; flex-direction:column; align-items:center; gap:4px; flex:1;">
+            <div style="font-size:11px; font-weight:800; opacity:0.6;">${d.pts}</div>
+            <div style="width:100%; max-width:28px; background:linear-gradient(180deg,var(--gold),var(--coral)); border-radius:6px 6px 2px 2px; height:${Math.max(6, (d.pts/maxPts)*54)}px;"></div>
+            <div style="font-size:10px; font-weight:800; opacity:0.55;">${d.label}</div>
+          </div>
+        `).join('')}
+      </div>
+      ${stats.bestDay && stats.bestDay.pts > 0 ? `<div class="speech-bubble" style="margin-top:10px;">Best day: <b>${stats.bestDay.label}</b> with ${stats.bestDay.pts} points! ${state.buddy.avatar}</div>` : `<div class="speech-bubble" style="margin-top:10px;">A new week is a fresh start! Let's go! ${state.buddy.avatar}</div>`}
+      <button class="btn btn-primary" id="closeWeekly2">Nice! 🎊</button>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  const close = ()=> overlay.remove();
+  document.getElementById('closeWeekly').addEventListener('click', close);
+  document.getElementById('closeWeekly2').addEventListener('click', close);
+}
+
+
+function render(){
+  const app = document.getElementById('app');
+  if (view === 'setup') { app.innerHTML = renderSetup(); attachSetupHandlers(); return; }
+  if (view === 'admin') { app.innerHTML = renderAdmin(); attachAdminHandlers(); return; }
+  app.innerHTML = renderBuddy();
+  attachBuddyHandlers();
+}
+
+function renderBuddy(){
+  const tasks = classifyTasks();
+  const done = tasks.filter(t=>t.done);
+  const due = tasks.filter(t=>t.due && !t.done);
+  const upcoming = tasks.filter(t=>!t.due && !t.done);
+  const pct = tasks.length ? done.length/tasks.length : 0;
+  const stars = Array.from({length:5}).map((_,i)=> `<span class="${i < Math.round(pct*5) ? 'lit':''}">⭐</span>`).join('');
+
+  const sectionHtml = (label, list) => {
+    if (!list.length) return '';
+    return `<div class="section-label">${label}</div>` + list.map(taskCardHtml).join('');
+  };
+
+  return `
+    <div class="topbar">
+      <div style="display:flex; gap:8px; flex-wrap:wrap;">
+        <div class="points-badge">✨ ${todayPoints()} today</div>
+        <div class="streak-badge">🔥 ${state.streak||0} day streak</div>
+      </div>
+      <div style="display:flex; gap:8px; flex-shrink:0;">
+        <button class="gear-btn" id="weekBtn" title="This Week">📅</button>
+        <button class="gear-btn" id="gearBtn">⚙️</button>
+      </div>
+    </div>
+    <div class="buddy-hero">
+      <div class="buddy-avatar-wrap">${state.buddy.avatar}</div>
+      <div class="buddy-name">${state.buddy.name}</div>
+      <div class="star-row">${stars}</div>
+      <div class="speech-bubble">${tasks.length===0 ? "Ask a grown-up to add your first task! 🎯" : (done.length===tasks.length ? "You did EVERYTHING today! I'm so proud of you! 🎉" : greeting())}</div>
+    </div>
+    ${tasks.length===0 ? '<div class="empty-state">No tasks yet. Tap ⚙️ to ask a grown-up to add some!</div>' : ''}
+    ${sectionHtml('Time to do! ⏰', due)}
+    ${sectionHtml('Up Next', upcoming)}
+    ${sectionHtml('Completed ✅', done)}
+    ${renderBottomBar('buddy')}
+  `;
+}
+
+function taskCardHtml(t){
+  return `
+    <div class="task-card ${t.done?'done':''} ${t.due?'due':''}" data-id="${t.id}">
+      <div class="task-emoji">${t.emoji}</div>
+      <div class="task-info">
+        <div class="task-name">${t.name}</div>
+        <div class="task-meta">${formatTime(t.time)}</div>
+      </div>
+      <div class="task-points">+${t.points}</div>
+      <div class="check-circle ${t.done?'checked':''}">${t.done?'✓':''}</div>
+    </div>
+  `;
+}
+function formatTime(t){
+  const [h,m] = t.split(':').map(Number);
+  const ap = h>=12?'PM':'AM';
+  const hh = ((h+11)%12)+1;
+  return `${hh}:${String(m).padStart(2,'0')} ${ap}`;
+}
+
+function renderBottomBar(active){
+  return `
+    <div class="bottom-bar">
+      <div class="bottom-pill">
+        <button data-go="buddy" class="${active==='buddy'?'active':''}">🏠 Buddy</button>
+        <button data-go="gate" class="${active==='admin'?'active':''}">🛠️ Grown-up</button>
+      </div>
+    </div>
+  `;
+}
+
+function attachBuddyHandlers(){
+  document.querySelectorAll('.task-card').forEach(el=>{
+    el.addEventListener('click', ()=> toggleTask(el.dataset.id));
+  });
+  document.getElementById('gearBtn').addEventListener('click', openGate);
+  document.getElementById('weekBtn').addEventListener('click', ()=> openWeeklySummary(false));
+  document.querySelector('[data-go="gate"]').addEventListener('click', openGate);
+}
+
+function openGate(){
+  const a = Math.floor(Math.random()*8)+2, b = Math.floor(Math.random()*8)+2;
+  const overlay = document.createElement('div');
+  overlay.className = 'overlay center';
+  overlay.innerHTML = `
+    <div class="sheet" style="text-align:center;">
+      <div style="font-weight:800; opacity:0.6; font-size:13px;">GROWN-UP CHECK</div>
+      <div class="gate-q">What is ${a} + ${b}?</div>
+      <input type="number" class="gate-input" id="gateAns" placeholder="?">
+      <button class="btn btn-primary" id="gateGo">Enter</button>
+      <button class="btn btn-ghost" id="gateCancel">Cancel</button>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  document.getElementById('gateGo').addEventListener('click', ()=>{
+    const v = parseInt(document.getElementById('gateAns').value, 10);
+    if (v === a+b) { overlay.remove(); view='admin'; adminTab='tasks'; render(); }
+    else { document.getElementById('gateAns').style.borderColor = 'var(--coral)'; }
+  });
+  document.getElementById('gateCancel').addEventListener('click', ()=> overlay.remove());
+}
+
+/* ---------------- SETUP (first run) ---------------- */
+function renderSetup(){
+  return `
+    <div style="padding-top:40px; text-align:center;">
+      <h1 style="font-size:26px;">Let's meet your Buddy! 🎉</h1>
+      <p style="opacity:0.7; font-weight:600;">Pick a character and give them a name.</p>
+      <div style="font-size:80px; margin:18px 0;" id="setupAvatarPreview">${state.buddy.avatar}</div>
+      <div class="emoji-grid" id="setupAvatarGrid" style="justify-content:center;">
+        ${AVATARS.map(a=>`<button class="emoji-pick ${a===state.buddy.avatar?'sel':''}" data-av="${a}" style="font-size:24px;">${a}</button>`).join('')}
+      </div>
+      <label>Buddy's name</label>
+      <input type="text" id="setupName" value="${state.buddy.name}" placeholder="Buddy">
+      <button class="btn btn-primary" id="setupDone">Let's start the quest! 🚀</button>
+    </div>
+  `;
+}
+function attachSetupHandlers(){
+  let chosen = state.buddy.avatar;
+  document.querySelectorAll('#setupAvatarGrid .emoji-pick').forEach(b=>{
+    b.addEventListener('click', ()=>{
+      chosen = b.dataset.av;
+      document.getElementById('setupAvatarPreview').textContent = chosen;
+      document.querySelectorAll('#setupAvatarGrid .emoji-pick').forEach(x=>x.classList.remove('sel'));
+      b.classList.add('sel');
+    });
+  });
+  document.getElementById('setupDone').addEventListener('click', ()=>{
+    const name = document.getElementById('setupName').value.trim() || 'Buddy';
+    state.buddy = { name, avatar: chosen, setup:true };
+    saveState();
+    view = 'buddy';
+    render();
+  });
+}
+
+/* ---------------- ADMIN ---------------- */
+function renderAdmin(){
+  return `
+    <div class="topbar">
+      <h2 style="margin:0;">Grown-up Panel 🛠️</h2>
+      <button class="gear-btn" id="exitAdmin">✕</button>
+    </div>
+    <div class="bottom-pill" style="margin-bottom:16px; width:100%; justify-content:space-between;">
+      <button data-tab="tasks" class="${adminTab==='tasks'?'active':''}" style="flex:1;">Tasks</button>
+      <button data-tab="buddy" class="${adminTab==='buddy'?'active':''}" style="flex:1;">Buddy</button>
+      <button data-tab="achievements" class="${adminTab==='achievements'?'active':''}" style="flex:1;">Achievements</button>
+    </div>
+    ${adminTab==='tasks' ? renderAdminTasks() : ''}
+    ${adminTab==='buddy' ? renderAdminBuddy() : ''}
+    ${adminTab==='achievements' ? renderAdminAchievements() : ''}
+  `;
+}
+
+function renderAdminTasks(){
+  const sorted = [...state.tasks].sort((a,b)=>a.time.localeCompare(b.time));
+  return `
+    <button class="btn btn-secondary" id="enableNotifsBtn">🔔 Turn On Real Notifications</button>
+    <button class="btn btn-primary" id="addTaskBtn">+ Add a Task</button>
+    <div style="margin-top:16px;">
+      ${sorted.map(t=>`
+        <div class="admin-task-row">
+          <div class="t-emoji">${t.emoji}</div>
+          <div class="t-info">
+            <div class="t-name">${t.name}</div>
+            <div class="t-meta">${formatTime(t.time)} · ${t.points} pts</div>
+          </div>
+          <button class="icon-btn" data-edit="${t.id}">✏️</button>
+          <button class="icon-btn" data-del="${t.id}">🗑️</button>
+        </div>
+      `).join('') || '<div class="empty-state">No tasks yet.</div>'}
+    </div>
+  `;
+}
+
+function renderAdminBuddy(){
+  return `
+    <div style="text-align:center;">
+      <div style="font-size:64px;">${state.buddy.avatar}</div>
+      <label>Buddy's name</label>
+      <input type="text" id="buddyNameInput" value="${state.buddy.name}">
+      <label>Choose a character</label>
+      <div class="emoji-grid" id="buddyAvatarGrid" style="justify-content:center;">
+        ${AVATARS.map(a=>`<button class="emoji-pick ${a===state.buddy.avatar?'sel':''}" data-av="${a}" style="font-size:24px;">${a}</button>`).join('')}
+      </div>
+      <button class="btn btn-primary" id="saveBuddyBtn">Save Buddy</button>
+    </div>
+  `;
+}
+
+function renderAdminAchievements(){
+  return `
+    <div class="ach-grid">
+      ${ACHIEVEMENTS.map(a=>`
+        <div class="ach-card ${state.unlocked.includes(a.id)?'':'locked'}">
+          <div class="ach-emoji">${a.emoji}</div>
+          <div class="ach-title">${a.title}</div>
+          <div style="font-size:11px; opacity:0.6; margin-top:2px;">${a.desc}</div>
+        </div>
+      `).join('')}
+    </div>
+    <div style="margin-top:18px; text-align:center; opacity:0.7; font-weight:700;">
+      Lifetime points: ${lifetimePoints(state)} ✨
+    </div>
+  `;
+}
+
+function attachAdminHandlers(){
+  document.getElementById('exitAdmin').addEventListener('click', ()=>{ view='buddy'; render(); });
+  document.querySelectorAll('[data-tab]').forEach(b=>{
+    b.addEventListener('click', ()=>{ adminTab = b.dataset.tab; render(); });
+  });
+
+  if (adminTab === 'tasks') {
+    document.getElementById('addTaskBtn').addEventListener('click', ()=> openTaskForm(null));
+    document.getElementById('enableNotifsBtn').addEventListener('click', async ()=>{
+      try {
+        if (window.OneSignal) {
+          await OneSignal.Notifications.requestPermission();
+          alert('Notifications are set up! Once you create matching reminder schedules at cron-job.org (see setup guide), your son will get real alerts even when the app is closed.');
+        } else {
+          alert('Notifications aren\'t configured yet. Follow the SETUP_GUIDE to add your OneSignal App ID first.');
+        }
+      } catch(e) {
+        alert('Could not request permission. Make sure the OneSignal App ID is set up (see SETUP_GUIDE).');
+      }
+    });
+    document.querySelectorAll('[data-edit]').forEach(b=> b.addEventListener('click', ()=> openTaskForm(b.dataset.edit)));
+    document.querySelectorAll('[data-del]').forEach(b=> b.addEventListener('click', ()=>{
+      state.tasks = state.tasks.filter(t=>t.id!==b.dataset.del);
+      saveState(); render();
+    }));
+  }
+  if (adminTab === 'buddy') {
+    let chosen = state.buddy.avatar;
+    document.querySelectorAll('#buddyAvatarGrid .emoji-pick').forEach(b=>{
+      b.addEventListener('click', ()=>{
+        chosen = b.dataset.av;
+        document.querySelectorAll('#buddyAvatarGrid .emoji-pick').forEach(x=>x.classList.remove('sel'));
+        b.classList.add('sel');
+      });
+    });
+    document.getElementById('saveBuddyBtn').addEventListener('click', ()=>{
+      const name = document.getElementById('buddyNameInput').value.trim() || 'Buddy';
+      state.buddy.name = name; state.buddy.avatar = chosen;
+      saveState(); render();
+    });
+  }
+}
+
+function openTaskForm(taskId){
+  editingTaskId = taskId;
+  const existing = taskId ? state.tasks.find(t=>t.id===taskId) : null;
+  let emoji = existing ? existing.emoji : '🪥';
+  const overlay = document.createElement('div');
+  overlay.className = 'overlay';
+  overlay.innerHTML = `
+    <div class="sheet">
+      <h2>${existing ? 'Edit Task' : 'New Task'}</h2>
+      <label>Task name</label>
+      <input type="text" id="formName" value="${existing ? existing.name : ''}" placeholder="e.g. Brush Teeth">
+      <label>Time</label>
+      <input type="time" id="formTime" value="${existing ? existing.time : '09:00'}">
+      <label>Points</label>
+      <input type="number" id="formPoints" value="${existing ? existing.points : 10}" min="1" max="100">
+      <label>Icon</label>
+      <div class="emoji-grid" id="formEmojiGrid">
+        ${QUICK_EMOJIS.map(e=>`<button class="emoji-pick ${e===emoji?'sel':''}" data-em="${e}">${e}</button>`).join('')}
+      </div>
+      <button class="btn btn-primary" id="formSave">Save Task</button>
+      <button class="btn btn-secondary" id="formCancel">Cancel</button>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  document.querySelectorAll('#formEmojiGrid .emoji-pick').forEach(b=>{
+    b.addEventListener('click', ()=>{
+      emoji = b.dataset.em;
+      document.querySelectorAll('#formEmojiGrid .emoji-pick').forEach(x=>x.classList.remove('sel'));
+      b.classList.add('sel');
+    });
+  });
+  document.getElementById('formCancel').addEventListener('click', ()=> overlay.remove());
+  document.getElementById('formSave').addEventListener('click', ()=>{
+    const name = document.getElementById('formName').value.trim();
+    const time = document.getElementById('formTime').value;
+    const points = parseInt(document.getElementById('formPoints').value, 10) || 10;
+    if (!name || !time) return;
+    if (existing) {
+      existing.name = name; existing.time = time; existing.points = points; existing.emoji = emoji;
+    } else {
+      state.tasks.push({ id: 't'+Date.now(), name, time, points, emoji });
+    }
+    saveState();
+    overlay.remove();
+    render();
+  });
+}
+
+loadState();
+</script>
+</body>
+</html>

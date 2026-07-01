@@ -493,6 +493,39 @@ function playChime(){
   } catch(e) {}
 }
 
+// A bright "cha-ching" coin sound for when money is earned.
+function playCoinSound(){
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    // Two quick high bell tones (the "coin" chime)...
+    const coinNotes = [1318.5, 1760]; // E6, A6
+    coinNotes.forEach((freq, i) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'triangle';
+      osc.frequency.value = freq;
+      osc.connect(gain); gain.connect(ctx.destination);
+      const t = ctx.currentTime + i * 0.09;
+      gain.gain.setValueAtTime(0.001, t);
+      gain.gain.exponentialRampToValueAtTime(0.3, t + 0.015);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + 0.22);
+      osc.start(t); osc.stop(t + 0.24);
+    });
+    // ...followed by a little metallic "cha-ching" sparkle sweep
+    const sweep = ctx.createOscillator();
+    const sweepGain = ctx.createGain();
+    sweep.type = 'square';
+    sweep.connect(sweepGain); sweepGain.connect(ctx.destination);
+    const st = ctx.currentTime + 0.2;
+    sweep.frequency.setValueAtTime(2200, st);
+    sweep.frequency.exponentialRampToValueAtTime(3200, st + 0.15);
+    sweepGain.gain.setValueAtTime(0.001, st);
+    sweepGain.gain.exponentialRampToValueAtTime(0.12, st + 0.02);
+    sweepGain.gain.exponentialRampToValueAtTime(0.001, st + 0.18);
+    sweep.start(st); sweep.stop(st + 0.2);
+  } catch(e) {}
+}
+
 function greeting(){
   const h = new Date().getHours();
   const name = nameOrFallback();
@@ -529,15 +562,18 @@ function toggleTask(id){
     delete entries[id];
     saveState(); render();
   } else {
+    const moneyBefore = dayMoney(tk);
     entries[id] = task.points;
     const newAch = checkAchievements();
     saveState();
-    celebrate(task, newAch);
+    const moneyIncreased = dayMoney(tk) > moneyBefore;
+    celebrate(task, newAch, moneyIncreased);
   }
 }
 
-function celebrate(task, newAch){
+function celebrate(task, newAch, moneyIncreased){
   playChime();
+  if (moneyIncreased) setTimeout(playCoinSound, 260);
   triggerConfetti();
   triggerBuddyCelebration();
   const tk = todayKey();
@@ -559,7 +595,7 @@ function celebrate(task, newAch){
       <div class="big">👍✨</div>
       <div style="font-family:'Baloo 2'; font-weight:800; font-size:20px; margin-top:8px;">Awesome job!</div>
       <div style="font-weight:700; opacity:0.7; margin-top:4px;">${task.name} complete · +${task.points} pts</div>
-      <div style="font-weight:800; opacity:0.55; margin-top:2px; font-size:13px;">💵 ${fmtMoney(dayMoney(tk))} earned today</div>
+      <div style="font-weight:800; ${moneyIncreased?'color:#2E9E5B;':'opacity:0.55;'} margin-top:2px; font-size:13px;">💵 ${fmtMoney(dayMoney(tk))} earned today${moneyIncreased?' 🪙':''}</div>
     </div>`;
   document.body.appendChild(root);
   setTimeout(()=>{ root.remove(); render(); if (newAch && newAch.length) showAchievementToast(newAch); }, 1300);
@@ -973,6 +1009,8 @@ function openTaskForm(taskId){
       <label>Points</label>
       <input type="number" id="formPoints" value="${existing ? existing.points : 10}" min="1" max="100">
       <label>Icon</label>
+      <input type="text" id="formEmojiCustom" value="${(!QUICK_EMOJIS.includes(emoji) && !CUSTOM_TASK_ICON_KEYS.includes(emoji)) ? emoji : ''}" placeholder="Tap here, then use the emoji keyboard ⌨️" style="font-size:22px; text-align:center;" maxlength="8">
+      <div style="font-size:11px; opacity:0.5; font-weight:700; margin:4px 0 10px; text-align:center;">or pick one below</div>
       <div class="emoji-grid" id="formEmojiGrid">
         ${QUICK_EMOJIS.map(e=>`<button class="emoji-pick ${e===emoji?'sel':''}" data-em="${e}">${e}</button>`).join('')}
         ${CUSTOM_TASK_ICON_KEYS.map(k=>`<button class="emoji-pick ${k===emoji?'sel':''}" data-em="${k}" title="${CUSTOM_AVATARS[k].label}">${avatarPreviewHtml(k,22)}</button>`).join('')}
@@ -982,18 +1020,29 @@ function openTaskForm(taskId){
     </div>
   `;
   document.body.appendChild(overlay);
+  const customInput = document.getElementById('formEmojiCustom');
   document.querySelectorAll('#formEmojiGrid .emoji-pick').forEach(b=>{
     b.addEventListener('click', ()=>{
       emoji = b.dataset.em;
+      customInput.value = '';
       document.querySelectorAll('#formEmojiGrid .emoji-pick').forEach(x=>x.classList.remove('sel'));
       b.classList.add('sel');
     });
+  });
+  customInput.addEventListener('input', ()=>{
+    const typed = customInput.value.trim();
+    if (typed) {
+      emoji = typed;
+      document.querySelectorAll('#formEmojiGrid .emoji-pick').forEach(x=>x.classList.remove('sel'));
+    }
   });
   document.getElementById('formCancel').addEventListener('click', ()=> overlay.remove());
   document.getElementById('formSave').addEventListener('click', ()=>{
     const name = document.getElementById('formName').value.trim();
     const time = document.getElementById('formTime').value;
     const points = parseInt(document.getElementById('formPoints').value, 10) || 10;
+    const typedNow = customInput.value.trim();
+    if (typedNow) emoji = typedNow;
     if (!name || !time) return;
     if (existing) {
       existing.name = name; existing.time = time; existing.points = points; existing.emoji = emoji;

@@ -23,7 +23,7 @@
   window.OneSignalDeferred = window.OneSignalDeferred || [];
   OneSignalDeferred.push(async function(OneSignal) {
     await OneSignal.init({
-      appId: "1b048d97-511b-4a92-a508-75d78860fbc9", // <-- replace with your real App ID
+      appId: "YOUR_ONESIGNAL_APP_ID", // <-- replace with your real App ID
     });
   });
 </script>
@@ -311,12 +311,8 @@ function getWeekStats(){
 
 async function loadState(){
   try {
-    const res = await window.storage.get(STORE_KEY, false);
-    if (res && res.value) {
-      state = JSON.parse(res.value);
-    } else {
-      state = defaultState();
-    }
+    const raw = localStorage.getItem(STORE_KEY);
+    state = raw ? JSON.parse(raw) : defaultState();
   } catch(e) {
     state = defaultState();
   }
@@ -328,7 +324,7 @@ async function loadState(){
 
 async function saveState(){
   try {
-    await window.storage.set(STORE_KEY, JSON.stringify(state), false);
+    localStorage.setItem(STORE_KEY, JSON.stringify(state));
   } catch(e) { console.error('save failed', e); }
 }
 

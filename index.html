@@ -70,7 +70,7 @@
   /* ---- Buddy hero ---- */
   .buddy-hero{ text-align:center; margin:6px 0 22px; }
   .buddy-avatar-wrap{
-    width:180px; height:180px; margin:0 auto 4px; border-radius:50%;
+    width:240px; height:200px; margin:0 auto 4px; border-radius:28px;
     background: linear-gradient(160deg, #fff, #F0F4FF);
     display:flex; align-items:center; justify-content:center;
     box-shadow: var(--shadow);
@@ -211,6 +211,15 @@
   .celebrate-card .big{ font-size:54px; }
   .sparkle{ position:absolute; font-size:22px; animation: spark 1s ease-out forwards; }
   @keyframes spark{ 0%{ transform:translate(0,0) scale(0.6); opacity:1;} 100%{ transform: var(--end) scale(1.1); opacity:0;} }
+
+  .confetti-piece{
+    position:fixed; top:-20px; z-index:95; pointer-events:none;
+    animation: confettiFall linear forwards;
+  }
+  @keyframes confettiFall{
+    0%{ transform: translateY(0) translateX(0) rotate(0deg); opacity:1; }
+    100%{ transform: translateY(var(--fall-y)) translateX(var(--drift-x)) rotate(var(--spin)); opacity:0.9; }
+  }
 
   .gate-q{ font-size:22px; font-weight:800; text-align:center; margin:18px 0; }
   .gate-input{ text-align:center; font-size:22px; font-weight:800; }
@@ -529,6 +538,8 @@ function toggleTask(id){
 
 function celebrate(task, newAch){
   playChime();
+  triggerConfetti();
+  triggerBuddyCelebration();
   const tk = todayKey();
   const doneCount = Object.keys((state.progress[tk]&&state.progress[tk].entries)||{}).length;
   const allDone = doneCount >= state.tasks.length && state.tasks.length > 0;
@@ -552,6 +563,36 @@ function celebrate(task, newAch){
     </div>`;
   document.body.appendChild(root);
   setTimeout(()=>{ root.remove(); render(); if (newAch && newAch.length) showAchievementToast(newAch); }, 1300);
+}
+
+function triggerConfetti(){
+  const colors = ['#FF6B6B','#FFD166','#06D6A0','#8B7FE8','#4ECDC4','#FF9F1C'];
+  const shapes = ['50%', '3px', '0%'];
+  const count = 36;
+  const vw = window.innerWidth;
+  for (let i = 0; i < count; i++) {
+    const el = document.createElement('div');
+    const size = 6 + Math.random()*8;
+    const startX = Math.random() * vw;
+    const fallY = 520 + Math.random()*260;
+    const driftX = (Math.random()*160 - 80);
+    const spin = (Math.random()*720 - 360) + 'deg';
+    const dur = 1.1 + Math.random()*0.9;
+    const delay = Math.random()*0.15;
+    el.className = 'confetti-piece';
+    el.style.left = startX + 'px';
+    el.style.width = size + 'px';
+    el.style.height = (size * (0.5+Math.random())) + 'px';
+    el.style.background = colors[Math.floor(Math.random()*colors.length)];
+    el.style.borderRadius = shapes[Math.floor(Math.random()*shapes.length)];
+    el.style.setProperty('--fall-y', fallY + 'px');
+    el.style.setProperty('--drift-x', driftX + 'px');
+    el.style.setProperty('--spin', spin);
+    el.style.animationDuration = dur + 's';
+    el.style.animationDelay = delay + 's';
+    document.body.appendChild(el);
+    setTimeout(()=> el.remove(), (dur+delay)*1000 + 100);
+  }
 }
 
 function showAchievementToast(list){
@@ -972,112 +1013,204 @@ function buildCharacterGroup(avatarKey){
   const style = AVATAR_STYLES[avatarKey] || AVATAR_STYLES['🦊'];
   const group = new THREE.Group();
 
-  const bodyMat = new THREE.MeshStandardMaterial({ color: style.color, roughness:0.6 });
-  const bellyMat = new THREE.MeshStandardMaterial({ color: style.belly, roughness:0.7 });
-  const darkMat = new THREE.MeshStandardMaterial({ color: 0x2A2A35, roughness:0.4 });
-  const whiteMat = new THREE.MeshStandardMaterial({ color: 0xFFFFFF, roughness:0.4 });
+  const matOpts = { roughness:0.55, clearcoat:0.25, clearcoatRoughness:0.6 };
+  const MatCtor = THREE.MeshPhysicalMaterial || THREE.MeshStandardMaterial;
+  const bodyMat = new MatCtor({ color: style.color, ...matOpts });
+  const bellyMat = new MatCtor({ color: style.belly, roughness:0.7, clearcoat:0.1 });
+  const darkMat = new THREE.MeshStandardMaterial({ color: 0x2A2A35, roughness:0.35 });
+  const whiteMat = new THREE.MeshStandardMaterial({ color: 0xFFFFFF, roughness:0.3 });
+  const noseMat = new THREE.MeshStandardMaterial({ color: 0x3A2A2A, roughness:0.3 });
 
-  // Body
-  const body = new THREE.Mesh(new THREE.SphereGeometry(1, 24, 24), bodyMat);
-  body.scale.set(1, 0.92, 0.95);
+  // Body (torso, taller so limbs read as a full body)
+  const body = new THREE.Mesh(new THREE.SphereGeometry(1, 32, 32), bodyMat);
+  body.scale.set(1, 1.05, 0.95);
+  body.position.y = 0.15;
   group.add(body);
 
   // Belly patch
-  const belly = new THREE.Mesh(new THREE.SphereGeometry(0.6, 20, 20), bellyMat);
-  belly.position.set(0, -0.15, 0.78);
-  belly.scale.set(1, 1.1, 0.35);
+  const belly = new THREE.Mesh(new THREE.SphereGeometry(0.6, 24, 24), bellyMat);
+  belly.position.set(0, 0.0, 0.78);
+  belly.scale.set(1, 1.15, 0.35);
   group.add(belly);
 
-  // Eyes (white + pupil), stored for blinking
+  // Eyes (white + pupil + glossy highlight), stored for blinking
   const eyeGroup = new THREE.Group();
   [-0.36, 0.36].forEach(x=>{
-    const white = new THREE.Mesh(new THREE.SphereGeometry(0.19, 16, 16), whiteMat);
-    white.position.set(x, 0.22, 0.86);
-    const pupil = new THREE.Mesh(new THREE.SphereGeometry(0.09, 12, 12), darkMat);
-    pupil.position.set(x, 0.22, 0.99);
-    eyeGroup.add(white, pupil);
+    const white = new THREE.Mesh(new THREE.SphereGeometry(0.19, 20, 20), whiteMat);
+    white.position.set(x, 0.37, 0.88);
+    const pupil = new THREE.Mesh(new THREE.SphereGeometry(0.095, 14, 14), darkMat);
+    pupil.position.set(x, 0.37, 1.01);
+    const highlight = new THREE.Mesh(new THREE.SphereGeometry(0.035, 8, 8), whiteMat);
+    highlight.position.set(x+0.045, 0.42, 1.07);
+    eyeGroup.add(white, pupil, highlight);
   });
   group.add(eyeGroup);
 
+  // Nose
+  const nose = new THREE.Mesh(new THREE.SphereGeometry(0.06, 12, 12), noseMat);
+  nose.position.set(0, 0.12, 1.03);
+  group.add(nose);
+
   // Mouth (flattened sphere, scales vertically to talk)
-  const mouth = new THREE.Mesh(new THREE.SphereGeometry(0.22, 16, 16), darkMat);
-  mouth.position.set(0, -0.28, 0.9);
+  const mouth = new THREE.Mesh(new THREE.SphereGeometry(0.22, 18, 18), darkMat);
+  mouth.position.set(0, -0.1, 0.92);
   mouth.scale.set(1, 0.25, 0.4);
   group.add(mouth);
 
   // Cheeks (blush)
-  const cheekMat = new THREE.MeshStandardMaterial({ color: 0xFFB3B3, roughness:0.8, transparent:true, opacity:0.7 });
+  const cheekMat = new THREE.MeshStandardMaterial({ color: 0xFFB3B3, roughness:0.8, transparent:true, opacity:0.65 });
   [-0.58, 0.58].forEach(x=>{
-    const cheek = new THREE.Mesh(new THREE.SphereGeometry(0.12, 12, 12), cheekMat);
-    cheek.position.set(x, 0.0, 0.82);
+    const cheek = new THREE.Mesh(new THREE.SphereGeometry(0.12, 14, 14), cheekMat);
+    cheek.position.set(x, 0.15, 0.85);
     cheek.scale.set(1,0.7,0.3);
     group.add(cheek);
   });
 
+  // Arms (shoulder pivot groups so they can raise for celebrating)
+  const armMat = bodyMat;
+  const handMat = new MatCtor({ color: style.belly, roughness:0.6 });
+  function buildArm(sign){
+    const pivot = new THREE.Group();
+    pivot.position.set(sign*0.92, 0.15, 0.05);
+    const upper = new THREE.Mesh(new THREE.CylinderGeometry(0.16,0.16,0.6,10), armMat);
+    upper.rotation.z = sign * 0.9;
+    upper.position.set(sign*0.22, -0.18, 0);
+    const hand = new THREE.Mesh(new THREE.SphereGeometry(0.17, 14, 14), handMat);
+    hand.position.set(sign*0.42, -0.42, 0);
+    pivot.add(upper, hand);
+    pivot.userData.restRotationZ = 0;
+    return pivot;
+  }
+  const leftArm = buildArm(-1);
+  const rightArm = buildArm(1);
+  group.add(leftArm, rightArm);
+
+  // Feet (small ovals peeking out the bottom so it reads as a standing body)
+  const feetMat = new MatCtor({ color: style.belly, roughness:0.6 });
+  [-0.4, 0.4].forEach(x=>{
+    const foot = new THREE.Mesh(new THREE.SphereGeometry(0.24, 14, 14), feetMat);
+    foot.position.set(x, -1.05, 0.35);
+    foot.scale.set(1, 0.6, 1.3);
+    group.add(foot);
+  });
+
   // Ears / head features by type
   const earMat = bodyMat;
+  const earY = 1.1; // shifted up to match raised body center
   if (style.ear === 'pointy') {
     [-0.55, 0.55].forEach(x=>{
-      const ear = new THREE.Mesh(new THREE.ConeGeometry(0.28, 0.5, 12), earMat);
-      ear.position.set(x, 0.95, 0.1);
+      const ear = new THREE.Mesh(new THREE.ConeGeometry(0.28, 0.5, 14), earMat);
+      ear.position.set(x, earY, 0.1);
       ear.rotation.z = x < 0 ? 0.25 : -0.25;
       group.add(ear);
     });
   } else if (style.ear === 'round' || style.ear === 'roundBig') {
     const r = style.ear === 'roundBig' ? 0.34 : 0.26;
     [-0.62, 0.62].forEach(x=>{
-      const ear = new THREE.Mesh(new THREE.SphereGeometry(r, 14, 14), earMat);
-      ear.position.set(x, 0.88, 0.05);
+      const ear = new THREE.Mesh(new THREE.SphereGeometry(r, 16, 16), earMat);
+      ear.position.set(x, earY-0.07, 0.05);
       group.add(ear);
     });
   } else if (style.ear === 'roundSmall') {
     [-0.68, 0.68].forEach(x=>{
-      const ear = new THREE.Mesh(new THREE.SphereGeometry(0.18, 14, 14), earMat);
-      ear.position.set(x, 0.82, 0.0);
+      const ear = new THREE.Mesh(new THREE.SphereGeometry(0.18, 16, 16), earMat);
+      ear.position.set(x, earY-0.13, 0.0);
       group.add(ear);
     });
   } else if (style.ear === 'roundBlack') {
     [-0.62, 0.62].forEach(x=>{
-      const ear = new THREE.Mesh(new THREE.SphereGeometry(0.28, 14, 14), darkMat);
-      ear.position.set(x, 0.88, 0.05);
+      const ear = new THREE.Mesh(new THREE.SphereGeometry(0.28, 16, 16), darkMat);
+      ear.position.set(x, earY-0.07, 0.05);
       group.add(ear);
     });
   } else if (style.ear === 'long') {
     [-0.42, 0.42].forEach(x=>{
-      const ear = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.16, 0.85, 12), earMat);
-      ear.position.set(x, 1.15, 0.05);
+      const ear = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.16, 0.85, 14), earMat);
+      ear.position.set(x, earY+0.32, 0.05);
       ear.rotation.z = x < 0 ? 0.1 : -0.1;
       group.add(ear);
     });
   } else if (style.ear === 'horn') {
-    const horn = new THREE.Mesh(new THREE.ConeGeometry(0.14, 0.55, 12), new THREE.MeshStandardMaterial({ color:0xFFD166 }));
-    horn.position.set(0, 1.1, 0.35);
+    const horn = new THREE.Mesh(new THREE.ConeGeometry(0.14, 0.55, 14), new THREE.MeshStandardMaterial({ color:0xFFD166, roughness:0.4 }));
+    horn.position.set(0, earY+0.25, 0.35);
     horn.rotation.z = 0.1;
     group.add(horn);
   } else if (style.ear === 'wings') {
     [-0.9, 0.9].forEach(x=>{
       const wing = new THREE.Mesh(new THREE.ConeGeometry(0.35, 0.6, 6), earMat);
-      wing.position.set(x, 0.4, -0.2);
+      wing.position.set(x, 0.55, -0.2);
       wing.rotation.z = x < 0 ? 1.3 : -1.3;
       group.add(wing);
     });
   }
 
   if (style.glasses) {
-    const frameMat = new THREE.MeshStandardMaterial({ color: 0x2A2A6E, roughness:0.3 });
+    const frameMat = new THREE.MeshStandardMaterial({ color: 0x2A2A6E, roughness:0.25, metalness:0.2 });
     [-0.36, 0.36].forEach(x=>{
       const ring = new THREE.Mesh(new THREE.TorusGeometry(0.22, 0.03, 10, 24), frameMat);
-      ring.position.set(x, 0.22, 0.95);
+      ring.position.set(x, 0.37, 0.97);
       group.add(ring);
     });
     const bridge = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.16, 8), frameMat);
     bridge.rotation.z = Math.PI/2;
-    bridge.position.set(0, 0.22, 0.97);
+    bridge.position.set(0, 0.37, 0.99);
     group.add(bridge);
   }
 
-  group.userData = { eyeGroup, mouth };
+  group.userData = { eyeGroup, mouth, leftArm, rightArm };
   return group;
+}
+
+/* ---- Habitat: a tiny diorama behind the character ---- */
+function buildHabitat(scene){
+  // Sky gradient backdrop
+  const skyCanvas = document.createElement('canvas');
+  skyCanvas.width = 8; skyCanvas.height = 128;
+  const ctx = skyCanvas.getContext('2d');
+  const grad = ctx.createLinearGradient(0,0,0,128);
+  grad.addColorStop(0, '#BFE3FF');
+  grad.addColorStop(1, '#F5FBFF');
+  ctx.fillStyle = grad; ctx.fillRect(0,0,8,128);
+  const skyTex = new THREE.CanvasTexture(skyCanvas);
+  scene.background = skyTex;
+
+  // Sun
+  const sun = new THREE.Mesh(new THREE.SphereGeometry(0.35, 16, 16), new THREE.MeshBasicMaterial({ color:0xFFE18C }));
+  sun.position.set(-1.8, 2.1, -3);
+  scene.add(sun);
+
+  // Ground disc (grass)
+  const ground = new THREE.Mesh(new THREE.CylinderGeometry(2.6, 2.6, 0.2, 32), new THREE.MeshStandardMaterial({ color:0x8FDD9A, roughness:0.9 }));
+  ground.position.y = -1.25;
+  scene.add(ground);
+
+  // Soft shadow blob under the character (scales/fades during jump)
+  const shadowBlob = new THREE.Mesh(
+    new THREE.CircleGeometry(0.55, 24),
+    new THREE.MeshBasicMaterial({ color:0x1B1F3B, transparent:true, opacity:0.22 })
+  );
+  shadowBlob.rotation.x = -Math.PI/2;
+  shadowBlob.position.set(0, -1.14, 0.1);
+  scene.add(shadowBlob);
+
+  // A couple of small funny props: a bush, a rock, a flower
+  const bush = new THREE.Mesh(new THREE.SphereGeometry(0.4, 12, 12), new THREE.MeshStandardMaterial({ color:0x4FB86B, roughness:0.9 }));
+  bush.position.set(-1.7, -1.05, -0.8);
+  bush.scale.set(1, 0.8, 1);
+  scene.add(bush);
+
+  const rock = new THREE.Mesh(new THREE.DodecahedronGeometry(0.28, 0), new THREE.MeshStandardMaterial({ color:0xA9A9AD, roughness:0.95 }));
+  rock.position.set(1.8, -1.05, -0.6);
+  rock.rotation.set(0.4, 0.6, 0.2);
+  scene.add(rock);
+
+  const flowerStem = new THREE.Mesh(new THREE.CylinderGeometry(0.02,0.02,0.35,6), new THREE.MeshStandardMaterial({ color:0x4FB86B }));
+  flowerStem.position.set(1.5, -1.15, 0.9);
+  const flowerHead = new THREE.Mesh(new THREE.SphereGeometry(0.09, 10, 10), new THREE.MeshStandardMaterial({ color:0xFF8FB1 }));
+  flowerHead.position.set(1.5, -0.98, 0.9);
+  scene.add(flowerStem, flowerHead);
+
+  return { shadowBlob };
 }
 
 function ensureBuddy3D(container){
@@ -1088,17 +1221,28 @@ function ensureBuddy3D(container){
   if (!buddy3D) {
     const renderer = new THREE.WebGLRenderer({ antialias:true, alpha:true });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio||1, 2));
-    renderer.setSize(180, 180);
+    renderer.setSize(240, 200);
     const scene = new THREE.Scene();
-    const camera = new THREE.PerspectiveCamera(32, 1, 0.1, 20);
-    camera.position.set(0, 0.15, 4.2);
-    const key = new THREE.DirectionalLight(0xffffff, 1.0); key.position.set(2,3,4); scene.add(key);
-    const amb = new THREE.AmbientLight(0xffffff, 0.65); scene.add(amb);
-    buddy3D = { renderer, scene, camera, group:null, avatarKey:null, talking:false, blinkT:0, mounted:false };
+    const camera = new THREE.PerspectiveCamera(30, 240/200, 0.1, 20);
+    camera.position.set(0, 0.25, 4.6);
+
+    // Three-point lighting for a more realistic look
+    const key = new THREE.DirectionalLight(0xfff3e0, 1.15); key.position.set(2.5,3,4); scene.add(key);
+    const fill = new THREE.DirectionalLight(0xcfe8ff, 0.45); fill.position.set(-3,1,2); scene.add(fill);
+    const rim = new THREE.DirectionalLight(0xffffff, 0.5); rim.position.set(0,2,-4); scene.add(rim);
+    const amb = new THREE.AmbientLight(0xffffff, 0.4); scene.add(amb);
+
+    const habitat = buildHabitat(scene);
+
+    buddy3D = {
+      renderer, scene, camera, group:null, avatarKey:null, talking:false,
+      celebrating:false, celebrateStart:0, shadowBlob: habitat.shadowBlob, mounted:false
+    };
     startBuddyLoop();
   }
   if (buddy3D.group) buddy3D.scene.remove(buddy3D.group);
   const group = buildCharacterGroup(avatarKey);
+  group.position.y = -0.2;
   buddy3D.scene.add(group);
   buddy3D.group = group;
   buddy3D.avatarKey = avatarKey;
@@ -1116,26 +1260,65 @@ function mountBuddy3D(containerId){
   }
 }
 
+const CELEBRATE_DURATION = 1.3; // seconds, matches the celebration overlay timing
+function triggerBuddyCelebration(){
+  if (!buddy3D) return;
+  buddy3D.celebrating = true;
+  buddy3D.celebrateStart = performance.now() / 1000;
+}
+
 function startBuddyLoop(){
   function tick(){
     requestAnimationFrame(tick);
     if (!buddy3D || !buddy3D.group) return;
     const t = performance.now() / 1000;
-    buddy3D.group.rotation.y = Math.sin(t*0.6) * 0.18;
-    buddy3D.group.position.y = Math.sin(t*1.4) * 0.05;
+    const g = buddy3D.group;
+    const ud = g.userData;
+
+    if (buddy3D.celebrating) {
+      const elapsed = t - buddy3D.celebrateStart;
+      if (elapsed > CELEBRATE_DURATION) {
+        buddy3D.celebrating = false;
+        g.rotation.y = 0;
+        g.scale.set(1,1,1);
+      } else {
+        // Two happy jumps with squash & stretch, arms raised up
+        const jumpPhase = (elapsed % (CELEBRATE_DURATION/2)) / (CELEBRATE_DURATION/2);
+        const jumpHeight = Math.sin(jumpPhase * Math.PI) * 0.55;
+        g.position.y = -0.2 + jumpHeight;
+        const squash = 1 - Math.sin(jumpPhase * Math.PI) * 0.12;
+        g.scale.set(1/squash, squash, 1/squash);
+        g.rotation.y = Math.sin(elapsed * 6) * 0.3;
+        if (ud.leftArm) ud.leftArm.rotation.z = 1.9;
+        if (ud.rightArm) ud.rightArm.rotation.z = -1.9;
+        if (buddy3D.shadowBlob) {
+          buddy3D.shadowBlob.scale.set(1 - jumpHeight*0.5, 1 - jumpHeight*0.5, 1);
+          buddy3D.shadowBlob.material.opacity = 0.22 * (1 - jumpHeight*0.6);
+        }
+      }
+    } else {
+      // Idle: gentle bob, sway, blink
+      g.rotation.y = Math.sin(t*0.6) * 0.18;
+      g.position.y = -0.2 + Math.sin(t*1.4) * 0.05;
+      if (ud.leftArm) ud.leftArm.rotation.z = Math.sin(t*1.2) * 0.08;
+      if (ud.rightArm) ud.rightArm.rotation.z = -Math.sin(t*1.2) * 0.08;
+      if (buddy3D.shadowBlob) {
+        buddy3D.shadowBlob.scale.set(1,1,1);
+        buddy3D.shadowBlob.material.opacity = 0.22;
+      }
+    }
 
     // Blink every ~4s
     const blinkPhase = (t % 4);
     const blink = blinkPhase > 3.85 ? 0.15 : 1;
-    if (buddy3D.group.userData.eyeGroup) buddy3D.group.userData.eyeGroup.scale.y = blink;
+    if (ud.eyeGroup) ud.eyeGroup.scale.y = blink;
 
     // Mouth talk animation
-    const mouth = buddy3D.group.userData.mouth;
-    if (mouth) {
+    if (ud.mouth) {
       if (buddy3D.talking) {
-        mouth.scale.y = 0.2 + Math.abs(Math.sin(t*14)) * 0.55;
+        ud.mouth.scale.y = 0.2 + Math.abs(Math.sin(t*14)) * 0.55;
       } else {
-        mouth.scale.y = 0.25;
+        ud.mouth.scale.y = 0.25;
       }
     }
     buddy3D.renderer.render(buddy3D.scene, buddy3D.camera);

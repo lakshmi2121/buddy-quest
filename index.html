@@ -70,17 +70,12 @@
   /* ---- Buddy hero ---- */
   .buddy-hero{ text-align:center; margin:6px 0 22px; }
   .buddy-avatar-wrap{
-    width:240px; height:200px; margin:0 auto 4px; border-radius:28px;
-    background: linear-gradient(160deg, #fff, #F0F4FF);
+    width:280px; height:240px; margin:0 auto -6px; 
     display:flex; align-items:center; justify-content:center;
-    box-shadow: var(--shadow);
-    border: 5px solid white;
-    animation: float 3.2s ease-in-out infinite, popIn .6s cubic-bezier(.34,1.56,.64,1);
-    overflow:hidden; position:relative; cursor:pointer;
+    position:relative; cursor:pointer;
   }
-  .buddy-avatar-wrap canvas{ width:100% !important; height:100% !important; display:block; }
-  @keyframes float{ 0%,100%{ transform:translateY(0) } 50%{ transform:translateY(-8px) } }
-  @keyframes popIn{ 0%{ transform:scale(0.2); opacity:0;} 70%{ transform:scale(1.08); opacity:1;} 100%{ transform:scale(1);} }
+  .buddy-avatar-wrap canvas{ width:100% !important; height:100% !important; display:block; opacity:0; transition:opacity .5s ease; }
+  .buddy-avatar-wrap canvas.ready{ opacity:1; }
   .tap-hint{ font-size:11px; font-weight:700; opacity:0.4; margin-bottom:8px; }
   .speech-bubble{
     background:var(--card); border-radius:20px; padding:14px 18px; box-shadow:var(--shadow);
@@ -233,7 +228,7 @@ const STORE_KEY = 'buddy-app-state-v1';
 const QUICK_EMOJIS = ['🪥','🍎','📚','🛏️','🧹','🎒','👕','🚿','🏃','🎨','🍽️','🧸','🎵','💧','✏️','🧦','🐶','⏰','🧴','🎮','🔢','➕','➗','🧮','📐','💻'];
 // Custom (image-based) task icons, using the same uploaded artwork as the custom avatar.
 const CUSTOM_TASK_ICON_KEYS = ['reading_monster'];
-const AVATARS = ['🦊','🐵','🐯','🦁','🐰','🐼','🐨','🐸','🦄','🐲','🐱','🐻'];
+const AVATARS = ['🐼','🦊','🐰','🐱'];
 
 // Custom (non-emoji) avatars added from uploaded images.
 const CUSTOM_AVATARS = {
@@ -250,21 +245,14 @@ function avatarPreviewHtml(key, sizePx){
   return `<span style="font-size:${sizePx}px; line-height:1;">${key}</span>`;
 }
 
-// Maps each emoji avatar choice to a look for the 3D character.
+// Maps each avatar choice to a detailed look for the 3D character.
+// 'species' drives dedicated, higher-detail geometry for that character.
 const AVATAR_STYLES = {
-  '🦊': { color:0xFF8C42, belly:0xFFF3E6, ear:'pointy' },
-  '🐵': { color:0xA9714B, belly:0xE8CBA8, ear:'round' },
-  '🐯': { color:0xF4A93B, belly:0xFFF3D6, ear:'round' },
-  '🦁': { color:0xF2C14E, belly:0xFFF6D9, ear:'round' },
-  '🐰': { color:0xF5F5F5, belly:0xFFE1EC, ear:'long' },
-  '🐼': { color:0xFAFAFA, belly:0xFFFFFF, ear:'roundBlack' },
-  '🐨': { color:0xB0B0B0, belly:0xE9E9E9, ear:'roundBig' },
-  '🐸': { color:0x6BCB77, belly:0xE3FFE8, ear:'none' },
-  '🦄': { color:0xFDEBFF, belly:0xFFFFFF, ear:'horn' },
-  '🐲': { color:0x4CAF7D, belly:0xD9FFE9, ear:'wings' },
-  '🐱': { color:0xE8A87C, belly:0xFFF1E3, ear:'pointy' },
-  '🐻': { color:0x8B5E3C, belly:0xE3C7A4, ear:'round' },
-  'reading_monster': { color:0xB565E8, belly:0xE6C9FA, ear:'roundSmall', glasses:true },
+  '🐼': { species:'panda', color:0xF7F7F5, belly:0xFFFFFF, accent:0x2B2B30 },
+  '🦊': { species:'fox',   color:0xE8783C, belly:0xFFF3E6, accent:0xFFFFFF },
+  '🐰': { species:'bunny', color:0xF3EDE8, belly:0xFFE1EC, accent:0xF7C9D6 },
+  '🐱': { species:'cat',   color:0xD9A066, belly:0xFFF1E3, accent:0x8A5A34 },
+  'reading_monster': { species:'monster', color:0xB565E8, belly:0xE6C9FA, accent:0x2A2A6E, glasses:true },
 };
 
 const GREETING_LINES = [
@@ -1058,76 +1046,150 @@ function openTaskForm(taskId){
 /* ================= 3D BUDDY CHARACTER (Three.js) ================= */
 let buddy3D = null; // { renderer, scene, camera, group, mouth, eyes, avatarKey, talking }
 
+// Generates a subtly mottled "fur" canvas texture so materials aren't flat cartoon color.
+function makeFurTexture(baseHex, speckleHex){
+  const c = document.createElement('canvas');
+  c.width = 64; c.height = 64;
+  const ctx = c.getContext('2d');
+  const base = '#' + baseHex.toString(16).padStart(6,'0');
+  const speck = '#' + speckleHex.toString(16).padStart(6,'0');
+  ctx.fillStyle = base; ctx.fillRect(0,0,64,64);
+  ctx.globalAlpha = 0.10;
+  for (let i=0; i<260; i++){
+    ctx.fillStyle = Math.random() > 0.5 ? speck : base;
+    const x = Math.random()*64, y = Math.random()*64, r = 0.5 + Math.random()*1.4;
+    ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+  const tex = new THREE.CanvasTexture(c);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.repeat.set(2,2);
+  return tex;
+}
+
 function buildCharacterGroup(avatarKey){
-  const style = AVATAR_STYLES[avatarKey] || AVATAR_STYLES['🦊'];
+  const style = AVATAR_STYLES[avatarKey] || AVATAR_STYLES['🐼'];
+  const species = style.species || 'panda';
   const group = new THREE.Group();
 
-  const matOpts = { roughness:0.55, clearcoat:0.25, clearcoatRoughness:0.6 };
   const MatCtor = THREE.MeshPhysicalMaterial || THREE.MeshStandardMaterial;
-  const bodyMat = new MatCtor({ color: style.color, ...matOpts });
+  const furMap = makeFurTexture(style.color, style.accent);
+  const bodyMat = new MatCtor({ color: 0xffffff, map: furMap, roughness:0.6, clearcoat:0.2, clearcoatRoughness:0.6 });
   const bellyMat = new MatCtor({ color: style.belly, roughness:0.7, clearcoat:0.1 });
-  const darkMat = new THREE.MeshStandardMaterial({ color: 0x2A2A35, roughness:0.35 });
-  const whiteMat = new THREE.MeshStandardMaterial({ color: 0xFFFFFF, roughness:0.3 });
-  const noseMat = new THREE.MeshStandardMaterial({ color: 0x3A2A2A, roughness:0.3 });
+  const accentMat = new MatCtor({ color: style.accent, roughness:0.55, clearcoat:0.2 });
+  const darkMat = new THREE.MeshStandardMaterial({ color: 0x2A2A35, roughness:0.3 });
+  const whiteMat = new THREE.MeshStandardMaterial({ color: 0xFFFFFF, roughness:0.25 });
+  const irisMat = new THREE.MeshStandardMaterial({ color: 0x6B4226, roughness:0.3 });
+  const noseMat = new THREE.MeshStandardMaterial({ color: 0x3A2A2A, roughness:0.25 });
+  const pinkMat = new THREE.MeshStandardMaterial({ color: 0xFFB6C8, roughness:0.6 });
 
-  // Body (torso, taller so limbs read as a full body)
-  const body = new THREE.Mesh(new THREE.SphereGeometry(1, 32, 32), bodyMat);
-  body.scale.set(1, 1.05, 0.95);
-  body.position.y = 0.15;
-  group.add(body);
+  // Torso (lower body)
+  const torso = new THREE.Mesh(new THREE.SphereGeometry(0.85, 32, 32), bodyMat);
+  torso.scale.set(1, 0.98, 0.92);
+  torso.position.y = -0.35;
+  group.add(torso);
+
+  // Neck taper joining torso to head
+  const neck = new THREE.Mesh(new THREE.SphereGeometry(0.42, 20, 20), bodyMat);
+  neck.position.y = 0.28;
+  neck.scale.set(1, 0.7, 0.9);
+  group.add(neck);
+
+  // Head (distinct sphere, gives a proper head/body silhouette instead of one blob)
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.62, 32, 32), bodyMat);
+  head.position.y = 0.72;
+  head.scale.set(1, 0.96, 0.95);
+  group.add(head);
 
   // Belly patch
-  const belly = new THREE.Mesh(new THREE.SphereGeometry(0.6, 24, 24), bellyMat);
-  belly.position.set(0, 0.0, 0.78);
-  belly.scale.set(1, 1.15, 0.35);
+  const belly = new THREE.Mesh(new THREE.SphereGeometry(0.5, 24, 24), bellyMat);
+  belly.position.set(0, -0.42, 0.62);
+  belly.scale.set(1, 1.05, 0.3);
   group.add(belly);
 
-  // Eyes (white + pupil + glossy highlight), stored for blinking
+  // Muzzle (species-shaped snout gives real character to the face)
+  let muzzleColor = species === 'panda' ? 0xFFFFFF : style.belly;
+  const muzzleMat = new MatCtor({ color: muzzleColor, roughness:0.65 });
+  const muzzle = new THREE.Mesh(new THREE.SphereGeometry(species === 'cat' ? 0.24 : 0.3, 20, 20), muzzleMat);
+  muzzle.position.set(0, 0.55, 0.58);
+  muzzle.scale.set(1, 0.75, species === 'fox' ? 0.95 : 0.7);
+  group.add(muzzle);
+
+  // Eyes (white + iris + pupil + glossy highlight), stored for blinking
   const eyeGroup = new THREE.Group();
-  [-0.36, 0.36].forEach(x=>{
-    const white = new THREE.Mesh(new THREE.SphereGeometry(0.19, 20, 20), whiteMat);
-    white.position.set(x, 0.37, 0.88);
-    const pupil = new THREE.Mesh(new THREE.SphereGeometry(0.095, 14, 14), darkMat);
-    pupil.position.set(x, 0.37, 1.01);
-    const highlight = new THREE.Mesh(new THREE.SphereGeometry(0.035, 8, 8), whiteMat);
-    highlight.position.set(x+0.045, 0.42, 1.07);
-    eyeGroup.add(white, pupil, highlight);
+  const eyeY = species === 'panda' ? 0.78 : 0.8;
+  [-0.26, 0.26].forEach(x=>{
+    const white = new THREE.Mesh(new THREE.SphereGeometry(0.155, 20, 20), whiteMat);
+    white.position.set(x, eyeY, 0.62);
+    const iris = new THREE.Mesh(new THREE.SphereGeometry(0.09, 16, 16), irisMat);
+    iris.position.set(x, eyeY, 0.71);
+    const pupil = new THREE.Mesh(new THREE.SphereGeometry(0.05, 14, 14), darkMat);
+    pupil.position.set(x, eyeY, 0.75);
+    const highlight = new THREE.Mesh(new THREE.SphereGeometry(0.028, 8, 8), whiteMat);
+    highlight.position.set(x+0.035, eyeY+0.04, 0.78);
+    eyeGroup.add(white, iris, pupil, highlight);
   });
   group.add(eyeGroup);
 
+  // Panda eye patches — the single most recognizable realism cue for this species
+  if (species === 'panda') {
+    [-0.26, 0.26].forEach(x=>{
+      const patch = new THREE.Mesh(new THREE.SphereGeometry(0.22, 16, 16), darkMat);
+      patch.position.set(x, eyeY+0.02, 0.52);
+      patch.scale.set(0.9, 1.3, 0.5);
+      patch.rotation.z = x < 0 ? 0.3 : -0.3;
+      group.add(patch);
+    });
+  }
+
   // Nose
-  const nose = new THREE.Mesh(new THREE.SphereGeometry(0.06, 12, 12), noseMat);
-  nose.position.set(0, 0.12, 1.03);
+  const nose = new THREE.Mesh(new THREE.SphereGeometry(species==='cat'?0.045:0.055, 12, 12), noseMat);
+  nose.position.set(0, 0.42, 0.86);
   group.add(nose);
 
   // Mouth (flattened sphere, scales vertically to talk)
-  const mouth = new THREE.Mesh(new THREE.SphereGeometry(0.22, 18, 18), darkMat);
-  mouth.position.set(0, -0.1, 0.92);
-  mouth.scale.set(1, 0.25, 0.4);
+  const mouth = new THREE.Mesh(new THREE.SphereGeometry(0.16, 18, 18), darkMat);
+  mouth.position.set(0, 0.28, 0.78);
+  mouth.scale.set(1, 0.22, 0.35);
   group.add(mouth);
 
   // Cheeks (blush)
-  const cheekMat = new THREE.MeshStandardMaterial({ color: 0xFFB3B3, roughness:0.8, transparent:true, opacity:0.65 });
-  [-0.58, 0.58].forEach(x=>{
-    const cheek = new THREE.Mesh(new THREE.SphereGeometry(0.12, 14, 14), cheekMat);
-    cheek.position.set(x, 0.15, 0.85);
+  const cheekMat = new THREE.MeshStandardMaterial({ color: 0xFFB3B3, roughness:0.8, transparent:true, opacity:0.55 });
+  [-0.44, 0.44].forEach(x=>{
+    const cheek = new THREE.Mesh(new THREE.SphereGeometry(0.1, 14, 14), cheekMat);
+    cheek.position.set(x, 0.45, 0.66);
     cheek.scale.set(1,0.7,0.3);
     group.add(cheek);
   });
 
+  // Whiskers for cat/fox
+  if (species === 'cat' || species === 'fox') {
+    const whiskerMat = new THREE.MeshStandardMaterial({ color: 0xF5F5F5, roughness:0.5 });
+    [-1, 1].forEach(sign=>{
+      [0.05, 0, -0.05].forEach((yOff, i)=>{
+        const w = new THREE.Mesh(new THREE.CylinderGeometry(0.007,0.007,0.4,6), whiskerMat);
+        w.rotation.z = Math.PI/2;
+        w.rotation.y = sign * 0.15;
+        w.position.set(sign*0.55, 0.4+yOff, 0.68 - i*0.01);
+        group.add(w);
+      });
+    });
+  }
+
+  // Limb color: panda has black limbs (iconic), others use body/accent tone
+  const limbMat = species === 'panda' ? accentMat : bodyMat;
+  const handMat = species === 'panda' ? accentMat : new MatCtor({ color: style.belly, roughness:0.6 });
+
   // Arms (shoulder pivot groups so they can raise for celebrating)
-  const armMat = bodyMat;
-  const handMat = new MatCtor({ color: style.belly, roughness:0.6 });
   function buildArm(sign){
     const pivot = new THREE.Group();
-    pivot.position.set(sign*0.92, 0.15, 0.05);
-    const upper = new THREE.Mesh(new THREE.CylinderGeometry(0.16,0.16,0.6,10), armMat);
+    pivot.position.set(sign*0.78, -0.15, 0.05);
+    const upper = new THREE.Mesh(new THREE.CylinderGeometry(0.135,0.135,0.52,10), limbMat);
     upper.rotation.z = sign * 0.9;
-    upper.position.set(sign*0.22, -0.18, 0);
-    const hand = new THREE.Mesh(new THREE.SphereGeometry(0.17, 14, 14), handMat);
-    hand.position.set(sign*0.42, -0.42, 0);
+    upper.position.set(sign*0.19, -0.16, 0);
+    const hand = new THREE.Mesh(new THREE.SphereGeometry(0.145, 14, 14), handMat);
+    hand.position.set(sign*0.37, -0.37, 0);
     pivot.add(upper, hand);
-    pivot.userData.restRotationZ = 0;
     return pivot;
   }
   const leftArm = buildArm(-1);
@@ -1135,74 +1197,88 @@ function buildCharacterGroup(avatarKey){
   group.add(leftArm, rightArm);
 
   // Feet (small ovals peeking out the bottom so it reads as a standing body)
-  const feetMat = new MatCtor({ color: style.belly, roughness:0.6 });
-  [-0.4, 0.4].forEach(x=>{
-    const foot = new THREE.Mesh(new THREE.SphereGeometry(0.24, 14, 14), feetMat);
-    foot.position.set(x, -1.05, 0.35);
+  [-0.34, 0.34].forEach(x=>{
+    const foot = new THREE.Mesh(new THREE.SphereGeometry(0.2, 14, 14), handMat);
+    foot.position.set(x, -1.12, 0.3);
     foot.scale.set(1, 0.6, 1.3);
     group.add(foot);
   });
 
-  // Ears / head features by type
+  // Tail — species-specific, adds a lot of personality/realism
+  if (species === 'fox') {
+    const tail = new THREE.Group();
+    const base = new THREE.Mesh(new THREE.ConeGeometry(0.28, 0.75, 16), bodyMat);
+    base.rotation.x = Math.PI/2.4;
+    base.position.set(0, -0.4, -0.85);
+    const tip = new THREE.Mesh(new THREE.SphereGeometry(0.16, 14, 14), whiteMat);
+    tip.position.set(0, -0.15, -1.35);
+    tail.add(base, tip);
+    group.add(tail);
+  } else if (species === 'bunny') {
+    const tail = new THREE.Mesh(new THREE.SphereGeometry(0.16, 14, 14), whiteMat);
+    tail.position.set(0, -0.35, -0.85);
+    group.add(tail);
+  } else if (species === 'cat') {
+    const seg1 = new THREE.Mesh(new THREE.CylinderGeometry(0.08,0.1,0.5,10), bodyMat);
+    seg1.position.set(0, -0.25, -0.85); seg1.rotation.x = 1.1;
+    const seg2 = new THREE.Mesh(new THREE.CylinderGeometry(0.06,0.08,0.4,10), bodyMat);
+    seg2.position.set(0, 0.05, -1.15); seg2.rotation.x = 0.3;
+    group.add(seg1, seg2);
+  } else if (species === 'panda') {
+    const tail = new THREE.Mesh(new THREE.SphereGeometry(0.13, 12, 12), accentMat);
+    tail.position.set(0, -0.35, -0.82);
+    group.add(tail);
+  }
+
+  // Ears / head features by species
   const earMat = bodyMat;
-  const earY = 1.1; // shifted up to match raised body center
-  if (style.ear === 'pointy') {
-    [-0.55, 0.55].forEach(x=>{
-      const ear = new THREE.Mesh(new THREE.ConeGeometry(0.28, 0.5, 14), earMat);
-      ear.position.set(x, earY, 0.1);
-      ear.rotation.z = x < 0 ? 0.25 : -0.25;
+  const earY = 1.18;
+  if (species === 'fox' || species === 'cat') {
+    [-0.34, 0.34].forEach(x=>{
+      const ear = new THREE.Mesh(new THREE.ConeGeometry(0.19, 0.36, 14), earMat);
+      ear.position.set(x, earY, 0.05);
+      ear.rotation.z = x < 0 ? 0.2 : -0.2;
       group.add(ear);
+      const inner = new THREE.Mesh(new THREE.ConeGeometry(0.11, 0.22, 12), pinkMat);
+      inner.position.set(x, earY-0.02, 0.16);
+      inner.rotation.z = x < 0 ? 0.2 : -0.2;
+      group.add(inner);
     });
-  } else if (style.ear === 'round' || style.ear === 'roundBig') {
-    const r = style.ear === 'roundBig' ? 0.34 : 0.26;
-    [-0.62, 0.62].forEach(x=>{
-      const ear = new THREE.Mesh(new THREE.SphereGeometry(r, 16, 16), earMat);
-      ear.position.set(x, earY-0.07, 0.05);
-      group.add(ear);
-    });
-  } else if (style.ear === 'roundSmall') {
-    [-0.68, 0.68].forEach(x=>{
-      const ear = new THREE.Mesh(new THREE.SphereGeometry(0.18, 16, 16), earMat);
-      ear.position.set(x, earY-0.13, 0.0);
-      group.add(ear);
-    });
-  } else if (style.ear === 'roundBlack') {
-    [-0.62, 0.62].forEach(x=>{
-      const ear = new THREE.Mesh(new THREE.SphereGeometry(0.28, 16, 16), darkMat);
-      ear.position.set(x, earY-0.07, 0.05);
-      group.add(ear);
-    });
-  } else if (style.ear === 'long') {
+  } else if (species === 'panda') {
     [-0.42, 0.42].forEach(x=>{
-      const ear = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.16, 0.85, 14), earMat);
-      ear.position.set(x, earY+0.32, 0.05);
-      ear.rotation.z = x < 0 ? 0.1 : -0.1;
+      const ear = new THREE.Mesh(new THREE.SphereGeometry(0.22, 16, 16), accentMat);
+      ear.position.set(x, earY-0.05, 0.02);
       group.add(ear);
     });
-  } else if (style.ear === 'horn') {
-    const horn = new THREE.Mesh(new THREE.ConeGeometry(0.14, 0.55, 14), new THREE.MeshStandardMaterial({ color:0xFFD166, roughness:0.4 }));
-    horn.position.set(0, earY+0.25, 0.35);
-    horn.rotation.z = 0.1;
-    group.add(horn);
-  } else if (style.ear === 'wings') {
-    [-0.9, 0.9].forEach(x=>{
-      const wing = new THREE.Mesh(new THREE.ConeGeometry(0.35, 0.6, 6), earMat);
-      wing.position.set(x, 0.55, -0.2);
-      wing.rotation.z = x < 0 ? 1.3 : -1.3;
-      group.add(wing);
+  } else if (species === 'bunny') {
+    [-0.28, 0.28].forEach(x=>{
+      const ear = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.13, 0.72, 14), earMat);
+      ear.position.set(x, earY+0.28, 0.02);
+      ear.rotation.z = x < 0 ? 0.08 : -0.08;
+      group.add(ear);
+      const innerEar = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.07, 0.55, 12), pinkMat);
+      innerEar.position.set(x, earY+0.28, 0.13);
+      innerEar.rotation.z = x < 0 ? 0.08 : -0.08;
+      group.add(innerEar);
+    });
+  } else if (species === 'monster') {
+    [-0.4, 0.4].forEach(x=>{
+      const ear = new THREE.Mesh(new THREE.SphereGeometry(0.15, 14, 14), bodyMat);
+      ear.position.set(x, earY-0.1, -0.02);
+      group.add(ear);
     });
   }
 
   if (style.glasses) {
-    const frameMat = new THREE.MeshStandardMaterial({ color: 0x2A2A6E, roughness:0.25, metalness:0.2 });
-    [-0.36, 0.36].forEach(x=>{
-      const ring = new THREE.Mesh(new THREE.TorusGeometry(0.22, 0.03, 10, 24), frameMat);
-      ring.position.set(x, 0.37, 0.97);
+    const frameMat = new THREE.MeshStandardMaterial({ color: style.accent, roughness:0.25, metalness:0.2 });
+    [-0.26, 0.26].forEach(x=>{
+      const ring = new THREE.Mesh(new THREE.TorusGeometry(0.16, 0.024, 10, 24), frameMat);
+      ring.position.set(x, eyeY, 0.72);
       group.add(ring);
     });
-    const bridge = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.16, 8), frameMat);
+    const bridge = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.12, 8), frameMat);
     bridge.rotation.z = Math.PI/2;
-    bridge.position.set(0, 0.37, 0.99);
+    bridge.position.set(0, eyeY, 0.74);
     group.add(bridge);
   }
 
@@ -1210,58 +1286,42 @@ function buildCharacterGroup(avatarKey){
   return group;
 }
 
-/* ---- Habitat: a tiny diorama behind the character ---- */
+/* ---- Habitat: a tiny floating base the character stands on (no boxed frame) ---- */
 function buildHabitat(scene){
-  // Sky gradient backdrop
-  const skyCanvas = document.createElement('canvas');
-  skyCanvas.width = 8; skyCanvas.height = 128;
-  const ctx = skyCanvas.getContext('2d');
-  const grad = ctx.createLinearGradient(0,0,0,128);
-  grad.addColorStop(0, '#BFE3FF');
-  grad.addColorStop(1, '#F5FBFF');
-  ctx.fillStyle = grad; ctx.fillRect(0,0,8,128);
-  const skyTex = new THREE.CanvasTexture(skyCanvas);
-  scene.background = skyTex;
+  // No background rectangle — the canvas stays transparent so Buddy stands
+  // directly on the app's own page background, not inside a boxed window.
+  scene.background = null;
 
-  // Sun
-  const sun = new THREE.Mesh(new THREE.SphereGeometry(0.35, 16, 16), new THREE.MeshBasicMaterial({ color:0xFFE18C }));
-  sun.position.set(-1.8, 2.1, -3);
-  scene.add(sun);
-
-  // Ground disc (grass)
-  const ground = new THREE.Mesh(new THREE.CylinderGeometry(2.6, 2.6, 0.2, 32), new THREE.MeshStandardMaterial({ color:0x8FDD9A, roughness:0.9 }));
-  ground.position.y = -1.25;
+  // Ground disc (grass) — small floating "stage" under the character's feet
+  const ground = new THREE.Mesh(new THREE.CylinderGeometry(1.5, 1.6, 0.16, 32), new THREE.MeshStandardMaterial({ color:0x8FDD9A, roughness:0.9 }));
+  ground.position.y = -1.7;
   scene.add(ground);
 
   // Soft shadow blob under the character (scales/fades during jump)
   const shadowBlob = new THREE.Mesh(
-    new THREE.CircleGeometry(0.55, 24),
-    new THREE.MeshBasicMaterial({ color:0x1B1F3B, transparent:true, opacity:0.22 })
+    new THREE.CircleGeometry(0.5, 24),
+    new THREE.MeshBasicMaterial({ color:0x1B1F3B, transparent:true, opacity:0.2 })
   );
   shadowBlob.rotation.x = -Math.PI/2;
-  shadowBlob.position.set(0, -1.14, 0.1);
+  shadowBlob.position.set(0, -1.6, 0.1);
   scene.add(shadowBlob);
 
-  // A couple of small funny props: a bush, a rock, a flower
-  const bush = new THREE.Mesh(new THREE.SphereGeometry(0.4, 12, 12), new THREE.MeshStandardMaterial({ color:0x4FB86B, roughness:0.9 }));
-  bush.position.set(-1.7, -1.05, -0.8);
+  // A couple of small funny props right on the stage
+  const bush = new THREE.Mesh(new THREE.SphereGeometry(0.26, 12, 12), new THREE.MeshStandardMaterial({ color:0x4FB86B, roughness:0.9 }));
+  bush.position.set(-1.15, -1.52, -0.4);
   bush.scale.set(1, 0.8, 1);
   scene.add(bush);
 
-  const rock = new THREE.Mesh(new THREE.DodecahedronGeometry(0.28, 0), new THREE.MeshStandardMaterial({ color:0xA9A9AD, roughness:0.95 }));
-  rock.position.set(1.8, -1.05, -0.6);
-  rock.rotation.set(0.4, 0.6, 0.2);
-  scene.add(rock);
-
-  const flowerStem = new THREE.Mesh(new THREE.CylinderGeometry(0.02,0.02,0.35,6), new THREE.MeshStandardMaterial({ color:0x4FB86B }));
-  flowerStem.position.set(1.5, -1.15, 0.9);
-  const flowerHead = new THREE.Mesh(new THREE.SphereGeometry(0.09, 10, 10), new THREE.MeshStandardMaterial({ color:0xFF8FB1 }));
-  flowerHead.position.set(1.5, -0.98, 0.9);
+  const flowerStem = new THREE.Mesh(new THREE.CylinderGeometry(0.015,0.015,0.24,6), new THREE.MeshStandardMaterial({ color:0x4FB86B }));
+  flowerStem.position.set(1.05, -1.56, 0.5);
+  const flowerHead = new THREE.Mesh(new THREE.SphereGeometry(0.065, 10, 10), new THREE.MeshStandardMaterial({ color:0xFF8FB1 }));
+  flowerHead.position.set(1.05, -1.44, 0.5);
   scene.add(flowerStem, flowerHead);
 
   return { shadowBlob };
 }
 
+const ENTER_DURATION = 0.9;
 function ensureBuddy3D(container){
   const avatarKey = state.buddy.avatar;
   if (buddy3D && buddy3D.avatarKey === avatarKey) return buddy3D;
@@ -1270,10 +1330,10 @@ function ensureBuddy3D(container){
   if (!buddy3D) {
     const renderer = new THREE.WebGLRenderer({ antialias:true, alpha:true });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio||1, 2));
-    renderer.setSize(240, 200);
+    renderer.setSize(280, 240);
     const scene = new THREE.Scene();
-    const camera = new THREE.PerspectiveCamera(30, 240/200, 0.1, 20);
-    camera.position.set(0, 0.25, 4.6);
+    const camera = new THREE.PerspectiveCamera(28, 280/240, 0.1, 20);
+    camera.position.set(0, 0.15, 5.4);
 
     // Three-point lighting for a more realistic look
     const key = new THREE.DirectionalLight(0xfff3e0, 1.15); key.position.set(2.5,3,4); scene.add(key);
@@ -1285,16 +1345,18 @@ function ensureBuddy3D(container){
 
     buddy3D = {
       renderer, scene, camera, group:null, avatarKey:null, talking:false,
-      celebrating:false, celebrateStart:0, shadowBlob: habitat.shadowBlob, mounted:false
+      celebrating:false, celebrateStart:0, shadowBlob: habitat.shadowBlob, mounted:false,
+      enterStart:0, restY:-0.55
     };
     startBuddyLoop();
   }
   if (buddy3D.group) buddy3D.scene.remove(buddy3D.group);
   const group = buildCharacterGroup(avatarKey);
-  group.position.y = -0.2;
+  group.position.y = buddy3D.restY;
   buddy3D.scene.add(group);
   buddy3D.group = group;
   buddy3D.avatarKey = avatarKey;
+  buddy3D.enterStart = performance.now() / 1000; // trigger a fresh "pop up" entrance
   return buddy3D;
 }
 
@@ -1307,6 +1369,7 @@ function mountBuddy3D(containerId){
     container.innerHTML = '';
     container.appendChild(b.renderer.domElement);
   }
+  requestAnimationFrame(()=> b.renderer.domElement.classList.add('ready'));
 }
 
 const CELEBRATE_DURATION = 1.3; // seconds, matches the celebration overlay timing
@@ -1323,8 +1386,20 @@ function startBuddyLoop(){
     const t = performance.now() / 1000;
     const g = buddy3D.group;
     const ud = g.userData;
+    const restY = buddy3D.restY;
 
-    if (buddy3D.celebrating) {
+    const enterElapsed = t - buddy3D.enterStart;
+    const entering = enterElapsed < ENTER_DURATION;
+
+    if (entering) {
+      // Pop up from below with an elastic overshoot bounce
+      const p = enterElapsed / ENTER_DURATION;
+      const ease = 1 - Math.pow(1-p, 3) * Math.cos(p * Math.PI * 1.4);
+      g.position.y = (restY - 2.4) + (2.4 * Math.min(1, Math.max(0, ease)));
+      const s = 0.4 + 0.6 * Math.min(1, ease);
+      g.scale.set(s, s, s);
+      g.rotation.y = (1-p) * 0.6;
+    } else if (buddy3D.celebrating) {
       const elapsed = t - buddy3D.celebrateStart;
       if (elapsed > CELEBRATE_DURATION) {
         buddy3D.celebrating = false;
@@ -1334,7 +1409,7 @@ function startBuddyLoop(){
         // Two happy jumps with squash & stretch, arms raised up
         const jumpPhase = (elapsed % (CELEBRATE_DURATION/2)) / (CELEBRATE_DURATION/2);
         const jumpHeight = Math.sin(jumpPhase * Math.PI) * 0.55;
-        g.position.y = -0.2 + jumpHeight;
+        g.position.y = restY + jumpHeight;
         const squash = 1 - Math.sin(jumpPhase * Math.PI) * 0.12;
         g.scale.set(1/squash, squash, 1/squash);
         g.rotation.y = Math.sin(elapsed * 6) * 0.3;
@@ -1342,18 +1417,19 @@ function startBuddyLoop(){
         if (ud.rightArm) ud.rightArm.rotation.z = -1.9;
         if (buddy3D.shadowBlob) {
           buddy3D.shadowBlob.scale.set(1 - jumpHeight*0.5, 1 - jumpHeight*0.5, 1);
-          buddy3D.shadowBlob.material.opacity = 0.22 * (1 - jumpHeight*0.6);
+          buddy3D.shadowBlob.material.opacity = 0.2 * (1 - jumpHeight*0.6);
         }
       }
     } else {
       // Idle: gentle bob, sway, blink
       g.rotation.y = Math.sin(t*0.6) * 0.18;
-      g.position.y = -0.2 + Math.sin(t*1.4) * 0.05;
+      g.position.y = restY + Math.sin(t*1.4) * 0.05;
+      g.scale.set(1,1,1);
       if (ud.leftArm) ud.leftArm.rotation.z = Math.sin(t*1.2) * 0.08;
       if (ud.rightArm) ud.rightArm.rotation.z = -Math.sin(t*1.2) * 0.08;
       if (buddy3D.shadowBlob) {
         buddy3D.shadowBlob.scale.set(1,1,1);
-        buddy3D.shadowBlob.material.opacity = 0.22;
+        buddy3D.shadowBlob.material.opacity = 0.2;
       }
     }
 
@@ -1365,9 +1441,9 @@ function startBuddyLoop(){
     // Mouth talk animation
     if (ud.mouth) {
       if (buddy3D.talking) {
-        ud.mouth.scale.y = 0.2 + Math.abs(Math.sin(t*14)) * 0.55;
+        ud.mouth.scale.y = 0.2 + Math.abs(Math.sin(t*14)) * 0.5;
       } else {
-        ud.mouth.scale.y = 0.25;
+        ud.mouth.scale.y = 0.22;
       }
     }
     buddy3D.renderer.render(buddy3D.scene, buddy3D.camera);

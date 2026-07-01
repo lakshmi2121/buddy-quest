@@ -23,10 +23,11 @@
   window.OneSignalDeferred = window.OneSignalDeferred || [];
   OneSignalDeferred.push(async function(OneSignal) {
     await OneSignal.init({
-      appId: "1b048d97-511b-4a92-a508-75d78860fbc9", // <-- replace with your real App ID
+      appId: "1b048d97-511b-4a92-a508-75d78860fbc9",
     });
   });
 </script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <style>
   :root{
     --bg1:#EAF2FF;
@@ -69,14 +70,18 @@
   /* ---- Buddy hero ---- */
   .buddy-hero{ text-align:center; margin:6px 0 22px; }
   .buddy-avatar-wrap{
-    width:140px; height:140px; margin:0 auto 10px; border-radius:50%;
+    width:180px; height:180px; margin:0 auto 4px; border-radius:50%;
     background: linear-gradient(160deg, #fff, #F0F4FF);
     display:flex; align-items:center; justify-content:center;
-    font-size:74px; box-shadow: var(--shadow);
+    box-shadow: var(--shadow);
     border: 5px solid white;
-    animation: float 3.2s ease-in-out infinite;
+    animation: float 3.2s ease-in-out infinite, popIn .6s cubic-bezier(.34,1.56,.64,1);
+    overflow:hidden; position:relative; cursor:pointer;
   }
+  .buddy-avatar-wrap canvas{ width:100% !important; height:100% !important; display:block; }
   @keyframes float{ 0%,100%{ transform:translateY(0) } 50%{ transform:translateY(-8px) } }
+  @keyframes popIn{ 0%{ transform:scale(0.2); opacity:0;} 70%{ transform:scale(1.08); opacity:1;} 100%{ transform:scale(1);} }
+  .tap-hint{ font-size:11px; font-weight:700; opacity:0.4; margin-bottom:8px; }
   .speech-bubble{
     background:var(--card); border-radius:20px; padding:14px 18px; box-shadow:var(--shadow);
     display:inline-block; max-width:90%; font-weight:700; font-size:15.5px; position:relative; line-height:1.4;
@@ -216,8 +221,61 @@
 
 <script>
 const STORE_KEY = 'buddy-app-state-v1';
-const QUICK_EMOJIS = ['🪥','🍎','📚','🛏️','🧹','🎒','👕','🚿','🏃','🎨','🍽️','🧸','🎵','💧','✏️','🧦','🐶','⏰','🧴','🎮'];
+const QUICK_EMOJIS = ['🪥','🍎','📚','🛏️','🧹','🎒','👕','🚿','🏃','🎨','🍽️','🧸','🎵','💧','✏️','🧦','🐶','⏰','🧴','🎮','🔢','➕','➗','🧮','📐','💻'];
+// Custom (image-based) task icons, using the same uploaded artwork as the custom avatar.
+const CUSTOM_TASK_ICON_KEYS = ['reading_monster'];
 const AVATARS = ['🦊','🐵','🐯','🦁','🐰','🐼','🐨','🐸','🦄','🐲','🐱','🐻'];
+
+// Custom (non-emoji) avatars added from uploaded images.
+const CUSTOM_AVATARS = {
+  'reading_monster': { img: 'avatar-reading-monster.png', label:'Reading Buddy' },
+};
+const CUSTOM_AVATAR_KEYS = Object.keys(CUSTOM_AVATARS);
+
+function isCustomAvatar(key){ return Object.prototype.hasOwnProperty.call(CUSTOM_AVATARS, key); }
+// Renders either the emoji glyph or a thumbnail image for a given avatar key, sized to fit a text/icon slot.
+function avatarPreviewHtml(key, sizePx){
+  if (isCustomAvatar(key)) {
+    return `<img src="${CUSTOM_AVATARS[key].img}" style="width:${sizePx}px; height:${sizePx}px; object-fit:contain; vertical-align:middle;">`;
+  }
+  return `<span style="font-size:${sizePx}px; line-height:1;">${key}</span>`;
+}
+
+// Maps each emoji avatar choice to a look for the 3D character.
+const AVATAR_STYLES = {
+  '🦊': { color:0xFF8C42, belly:0xFFF3E6, ear:'pointy' },
+  '🐵': { color:0xA9714B, belly:0xE8CBA8, ear:'round' },
+  '🐯': { color:0xF4A93B, belly:0xFFF3D6, ear:'round' },
+  '🦁': { color:0xF2C14E, belly:0xFFF6D9, ear:'round' },
+  '🐰': { color:0xF5F5F5, belly:0xFFE1EC, ear:'long' },
+  '🐼': { color:0xFAFAFA, belly:0xFFFFFF, ear:'roundBlack' },
+  '🐨': { color:0xB0B0B0, belly:0xE9E9E9, ear:'roundBig' },
+  '🐸': { color:0x6BCB77, belly:0xE3FFE8, ear:'none' },
+  '🦄': { color:0xFDEBFF, belly:0xFFFFFF, ear:'horn' },
+  '🐲': { color:0x4CAF7D, belly:0xD9FFE9, ear:'wings' },
+  '🐱': { color:0xE8A87C, belly:0xFFF1E3, ear:'pointy' },
+  '🐻': { color:0x8B5E3C, belly:0xE3C7A4, ear:'round' },
+  'reading_monster': { color:0xB565E8, belly:0xE6C9FA, ear:'roundSmall', glasses:true },
+};
+
+const GREETING_LINES = [
+  "Ready for today's quest?",
+  "Let's get some tasks done together!",
+  "I believe in you today!",
+  "Let's make today awesome!",
+];
+const TASK_DONE_LINES = [
+  "Good job! You did it!",
+  "Woohoo! Nice work!",
+  "You're on fire today!",
+  "Awesome! High five!",
+  "That's my buddy!",
+];
+const ALL_DONE_LINES = [
+  "You finished everything today! I'm so proud of you!",
+  "Wow, a perfect day! You're amazing!",
+];
+
 
 const ACHIEVEMENTS = [
   { id:'first_task', emoji:'🌟', title:'First Steps', desc:'Complete your first task', test: s => totalCompletedEver(s) >= 1 },
@@ -239,6 +297,7 @@ function nowHM(){
 function defaultState(){
   return {
     buddy: { name:'Buddy', avatar:'🦊', setup:false },
+    kidName: '',
     tasks: [
       { id:'t1', time:'07:30', name:'Brush Teeth', emoji:'🪥', points:10 },
       { id:'t2', time:'08:00', name:'Eat Breakfast', emoji:'🍎', points:10 },
@@ -303,10 +362,50 @@ function getWeekStats(){
     totalPoints += pts; totalTasks += count;
     if (count > 0 && count >= state.tasks.length) perfectDays++;
     if (!bestDay || pts > bestDay.pts) bestDay = { label: weekdayLabel(i), pts };
-    days.push({ label: weekdayLabel(i), pts, count });
+    days.push({ label: weekdayLabel(i), pts, count, money: dayMoney(key) });
   }
   days.reverse();
-  return { days, totalPoints, totalTasks, perfectDays, bestDay };
+  const totalMoney = Math.round(days.reduce((a,d)=>a+d.money,0) * 100) / 100;
+  return { days, totalPoints, totalTasks, perfectDays, bestDay, totalMoney };
+}
+
+/* ---- Money: convert points to allowance, capped per day ---- */
+const DAILY_MAX_DOLLARS = 5;
+function dayMoney(dateKey){
+  const possible = state.tasks.reduce((a,t)=>a+t.points, 0);
+  if (possible <= 0) return 0;
+  const entries = (state.progress[dateKey] && state.progress[dateKey].entries) || {};
+  const earned = Object.values(entries).reduce((a,b)=>a+b,0);
+  const dollars = Math.min(DAILY_MAX_DOLLARS, (earned/possible) * DAILY_MAX_DOLLARS);
+  return Math.round(dollars * 100) / 100;
+}
+function fmtMoney(n){ return '$' + n.toFixed(2); }
+
+/* ---- Speech: Buddy talks out loud using the browser's built-in voice ---- */
+let hasGreetedThisLoad = false;
+function pickLine(arr){ return arr[Math.floor(Math.random()*arr.length)]; }
+function nameOrFallback(){ return state.kidName && state.kidName.trim() ? state.kidName.trim() : 'friend'; }
+function speakOnce(text){
+  if (hasGreetedThisLoad) return;
+  hasGreetedThisLoad = true;
+  buddySpeak(text);
+}
+function buddySpeak(text){
+  updateSpeechBubble(text);
+  if (!('speechSynthesis' in window)) return;
+  try {
+    window.speechSynthesis.cancel();
+    const utter = new SpeechSynthesisUtterance(text);
+    utter.rate = 0.95; utter.pitch = 1.25; utter.volume = 1;
+    utter.onstart = () => setBuddyTalking(true);
+    utter.onend = () => setBuddyTalking(false);
+    utter.onerror = () => setBuddyTalking(false);
+    window.speechSynthesis.speak(utter);
+  } catch(e) {}
+}
+function updateSpeechBubble(text){
+  const el = document.getElementById('buddyBubble');
+  if (el) el.textContent = text;
 }
 
 async function loadState(){
@@ -316,10 +415,12 @@ async function loadState(){
   } catch(e) {
     state = defaultState();
   }
+  if (state.kidName === undefined) state.kidName = '';
+  if (state.lastWeeklySummaryShown === undefined) state.lastWeeklySummaryShown = null;
   rolloverIfNeeded();
   if (!state.buddy.setup) { view = 'setup'; }
   render();
-  if (state.buddy.setup) maybeShowWeeklySummary();
+  if (state.buddy.setup) { maybeShowWeeklySummary(); speakOnce(pickLine(GREETING_LINES)); }
 }
 
 async function saveState(){
@@ -385,9 +486,10 @@ function playChime(){
 
 function greeting(){
   const h = new Date().getHours();
-  if (h < 12) return `Good morning! Ready for today's quest? ☀️`;
-  if (h < 17) return `Hey there! Keep up the great work! 🌤️`;
-  return `Evening, champ! Let's finish strong! 🌙`;
+  const name = nameOrFallback();
+  if (h < 12) return `Good morning, ${name}! Ready for today's quest? ☀️`;
+  if (h < 17) return `Hey ${name}! Keep up the great work! 🌤️`;
+  return `Evening, ${name}! Let's finish strong! 🌙`;
 }
 
 function classifyTasks(){
@@ -427,6 +529,11 @@ function toggleTask(id){
 
 function celebrate(task, newAch){
   playChime();
+  const tk = todayKey();
+  const doneCount = Object.keys((state.progress[tk]&&state.progress[tk].entries)||{}).length;
+  const allDone = doneCount >= state.tasks.length && state.tasks.length > 0;
+  const line = allDone ? pickLine(ALL_DONE_LINES) : `${pickLine(TASK_DONE_LINES)} ${task.name} done!`;
+  buddySpeak(line);
   const root = document.createElement('div');
   root.className = 'celebrate-overlay';
   const sparkles = Array.from({length:10}).map(()=>{
@@ -441,6 +548,7 @@ function celebrate(task, newAch){
       <div class="big">👍✨</div>
       <div style="font-family:'Baloo 2'; font-weight:800; font-size:20px; margin-top:8px;">Awesome job!</div>
       <div style="font-weight:700; opacity:0.7; margin-top:4px;">${task.name} complete · +${task.points} pts</div>
+      <div style="font-weight:800; opacity:0.55; margin-top:2px; font-size:13px;">💵 ${fmtMoney(dayMoney(tk))} earned today</div>
     </div>`;
   document.body.appendChild(root);
   setTimeout(()=>{ root.remove(); render(); if (newAch && newAch.length) showAchievementToast(newAch); }, 1300);
@@ -471,7 +579,7 @@ function checkReminders(){
         playChime();
         const banner = document.createElement('div');
         banner.className = 'toast';
-        banner.textContent = `⏰ Time for: ${t.emoji} ${t.name}!`;
+        banner.innerHTML = `⏰ Time for: ${avatarPreviewHtml(t.emoji, 18)} ${t.name}!`;
         document.body.appendChild(banner);
         setTimeout(()=>banner.remove(), 3500);
       }
@@ -491,18 +599,22 @@ function openWeeklySummary(isAuto){
       <div style="font-size:48px;">🎉📅</div>
       <h2 style="margin:4px 0 2px;">${isAuto ? "This Week's Recap!" : 'Weekly Recap'}</h2>
       <div style="opacity:0.65; font-weight:700; font-size:13px; margin-bottom:14px;">Sunday – Friday</div>
-      <div style="display:flex; gap:10px; margin-bottom:16px;">
-        <div style="flex:1; background:white; border-radius:14px; padding:12px; box-shadow:var(--shadow);">
+      <div style="display:flex; gap:8px; margin-bottom:16px; flex-wrap:wrap;">
+        <div style="flex:1; min-width:70px; background:white; border-radius:14px; padding:12px; box-shadow:var(--shadow);">
           <div style="font-size:22px; font-weight:800; color:var(--purple);">${stats.totalPoints}</div>
           <div style="font-size:11px; opacity:0.6; font-weight:700;">TOTAL POINTS</div>
         </div>
-        <div style="flex:1; background:white; border-radius:14px; padding:12px; box-shadow:var(--shadow);">
+        <div style="flex:1; min-width:70px; background:white; border-radius:14px; padding:12px; box-shadow:var(--shadow);">
           <div style="font-size:22px; font-weight:800; color:var(--mint);">${stats.totalTasks}</div>
           <div style="font-size:11px; opacity:0.6; font-weight:700;">TASKS DONE</div>
         </div>
-        <div style="flex:1; background:white; border-radius:14px; padding:12px; box-shadow:var(--shadow);">
+        <div style="flex:1; min-width:70px; background:white; border-radius:14px; padding:12px; box-shadow:var(--shadow);">
           <div style="font-size:22px; font-weight:800; color:var(--coral);">${stats.perfectDays}</div>
           <div style="font-size:11px; opacity:0.6; font-weight:700;">PERFECT DAYS</div>
+        </div>
+        <div style="flex:1; min-width:70px; background:white; border-radius:14px; padding:12px; box-shadow:var(--shadow);">
+          <div style="font-size:22px; font-weight:800; color:#2E9E5B;">${fmtMoney(stats.totalMoney)}</div>
+          <div style="font-size:11px; opacity:0.6; font-weight:700;">ALLOWANCE</div>
         </div>
       </div>
       <div style="display:flex; align-items:flex-end; gap:8px; justify-content:center; height:90px; margin-bottom:8px;">
@@ -514,11 +626,12 @@ function openWeeklySummary(isAuto){
           </div>
         `).join('')}
       </div>
-      ${stats.bestDay && stats.bestDay.pts > 0 ? `<div class="speech-bubble" style="margin-top:10px;">Best day: <b>${stats.bestDay.label}</b> with ${stats.bestDay.pts} points! ${state.buddy.avatar}</div>` : `<div class="speech-bubble" style="margin-top:10px;">A new week is a fresh start! Let's go! ${state.buddy.avatar}</div>`}
+      ${stats.bestDay && stats.bestDay.pts > 0 ? `<div class="speech-bubble" style="margin-top:10px;">Best day: <b>${stats.bestDay.label}</b> with ${stats.bestDay.pts} points! ${avatarPreviewHtml(state.buddy.avatar,20)}</div>` : `<div class="speech-bubble" style="margin-top:10px;">A new week is a fresh start! Let's go! ${avatarPreviewHtml(state.buddy.avatar,20)}</div>`}
       <button class="btn btn-primary" id="closeWeekly2">Nice! 🎊</button>
     </div>
   `;
   document.body.appendChild(overlay);
+  if (isAuto) buddySpeak(`Great week, ${nameOrFallback()}! You earned ${stats.totalPoints} points and ${fmtMoney(stats.totalMoney)} this week!`);
   const close = ()=> overlay.remove();
   document.getElementById('closeWeekly').addEventListener('click', close);
   document.getElementById('closeWeekly2').addEventListener('click', close);
@@ -551,6 +664,7 @@ function renderBuddy(){
       <div style="display:flex; gap:8px; flex-wrap:wrap;">
         <div class="points-badge">✨ ${todayPoints()} today</div>
         <div class="streak-badge">🔥 ${state.streak||0} day streak</div>
+        <div class="points-badge">💵 ${fmtMoney(dayMoney(todayKey()))}</div>
       </div>
       <div style="display:flex; gap:8px; flex-shrink:0;">
         <button class="gear-btn" id="weekBtn" title="This Week">📅</button>
@@ -558,10 +672,11 @@ function renderBuddy(){
       </div>
     </div>
     <div class="buddy-hero">
-      <div class="buddy-avatar-wrap">${state.buddy.avatar}</div>
+      <div class="buddy-avatar-wrap" id="buddyAvatarWrap"></div>
+      <div class="tap-hint">tap Buddy to say hi 👋</div>
       <div class="buddy-name">${state.buddy.name}</div>
       <div class="star-row">${stars}</div>
-      <div class="speech-bubble">${tasks.length===0 ? "Ask a grown-up to add your first task! 🎯" : (done.length===tasks.length ? "You did EVERYTHING today! I'm so proud of you! 🎉" : greeting())}</div>
+      <div class="speech-bubble" id="buddyBubble">${tasks.length===0 ? "Ask a grown-up to add your first task! 🎯" : (done.length===tasks.length ? pickLine(ALL_DONE_LINES) : greeting())}</div>
     </div>
     ${tasks.length===0 ? '<div class="empty-state">No tasks yet. Tap ⚙️ to ask a grown-up to add some!</div>' : ''}
     ${sectionHtml('Time to do! ⏰', due)}
@@ -574,7 +689,7 @@ function renderBuddy(){
 function taskCardHtml(t){
   return `
     <div class="task-card ${t.done?'done':''} ${t.due?'due':''}" data-id="${t.id}">
-      <div class="task-emoji">${t.emoji}</div>
+      <div class="task-emoji">${avatarPreviewHtml(t.emoji, 24)}</div>
       <div class="task-info">
         <div class="task-name">${t.name}</div>
         <div class="task-meta">${formatTime(t.time)}</div>
@@ -609,6 +724,9 @@ function attachBuddyHandlers(){
   document.getElementById('gearBtn').addEventListener('click', openGate);
   document.getElementById('weekBtn').addEventListener('click', ()=> openWeeklySummary(false));
   document.querySelector('[data-go="gate"]').addEventListener('click', openGate);
+  mountBuddy3D('buddyAvatarWrap');
+  const wrap = document.getElementById('buddyAvatarWrap');
+  if (wrap) wrap.addEventListener('click', ()=> buddySpeak(pickLine(GREETING_LINES)));
 }
 
 function openGate(){
@@ -639,9 +757,10 @@ function renderSetup(){
     <div style="padding-top:40px; text-align:center;">
       <h1 style="font-size:26px;">Let's meet your Buddy! 🎉</h1>
       <p style="opacity:0.7; font-weight:600;">Pick a character and give them a name.</p>
-      <div style="font-size:80px; margin:18px 0;" id="setupAvatarPreview">${state.buddy.avatar}</div>
+      <div style="margin:18px 0;" id="setupAvatarPreview">${avatarPreviewHtml(state.buddy.avatar, 80)}</div>
       <div class="emoji-grid" id="setupAvatarGrid" style="justify-content:center;">
         ${AVATARS.map(a=>`<button class="emoji-pick ${a===state.buddy.avatar?'sel':''}" data-av="${a}" style="font-size:24px;">${a}</button>`).join('')}
+        ${CUSTOM_AVATAR_KEYS.map(k=>`<button class="emoji-pick ${k===state.buddy.avatar?'sel':''}" data-av="${k}" title="${CUSTOM_AVATARS[k].label}">${avatarPreviewHtml(k,26)}</button>`).join('')}
       </div>
       <label>Buddy's name</label>
       <input type="text" id="setupName" value="${state.buddy.name}" placeholder="Buddy">
@@ -654,7 +773,7 @@ function attachSetupHandlers(){
   document.querySelectorAll('#setupAvatarGrid .emoji-pick').forEach(b=>{
     b.addEventListener('click', ()=>{
       chosen = b.dataset.av;
-      document.getElementById('setupAvatarPreview').textContent = chosen;
+      document.getElementById('setupAvatarPreview').innerHTML = avatarPreviewHtml(chosen, 80);
       document.querySelectorAll('#setupAvatarGrid .emoji-pick').forEach(x=>x.classList.remove('sel'));
       b.classList.add('sel');
     });
@@ -694,7 +813,7 @@ function renderAdminTasks(){
     <div style="margin-top:16px;">
       ${sorted.map(t=>`
         <div class="admin-task-row">
-          <div class="t-emoji">${t.emoji}</div>
+          <div class="t-emoji">${avatarPreviewHtml(t.emoji, 20)}</div>
           <div class="t-info">
             <div class="t-name">${t.name}</div>
             <div class="t-meta">${formatTime(t.time)} · ${t.points} pts</div>
@@ -710,12 +829,15 @@ function renderAdminTasks(){
 function renderAdminBuddy(){
   return `
     <div style="text-align:center;">
-      <div style="font-size:64px;">${state.buddy.avatar}</div>
+      <div style="margin-bottom:8px;">${avatarPreviewHtml(state.buddy.avatar, 64)}</div>
+      <label>Child's name (Buddy uses this to greet them)</label>
+      <input type="text" id="kidNameInput" value="${state.kidName||''}" placeholder="e.g. Alex">
       <label>Buddy's name</label>
       <input type="text" id="buddyNameInput" value="${state.buddy.name}">
       <label>Choose a character</label>
       <div class="emoji-grid" id="buddyAvatarGrid" style="justify-content:center;">
         ${AVATARS.map(a=>`<button class="emoji-pick ${a===state.buddy.avatar?'sel':''}" data-av="${a}" style="font-size:24px;">${a}</button>`).join('')}
+        ${CUSTOM_AVATAR_KEYS.map(k=>`<button class="emoji-pick ${k===state.buddy.avatar?'sel':''}" data-av="${k}" title="${CUSTOM_AVATARS[k].label}">${avatarPreviewHtml(k,26)}</button>`).join('')}
       </div>
       <button class="btn btn-primary" id="saveBuddyBtn">Save Buddy</button>
     </div>
@@ -723,6 +845,8 @@ function renderAdminBuddy(){
 }
 
 function renderAdminAchievements(){
+  let lifetimeMoney = 0;
+  for (const k in state.progress) lifetimeMoney += dayMoney(k);
   return `
     <div class="ach-grid">
       ${ACHIEVEMENTS.map(a=>`
@@ -734,7 +858,10 @@ function renderAdminAchievements(){
       `).join('')}
     </div>
     <div style="margin-top:18px; text-align:center; opacity:0.7; font-weight:700;">
-      Lifetime points: ${lifetimePoints(state)} ✨
+      Lifetime points: ${lifetimePoints(state)} ✨ · Lifetime allowance earned: ${fmtMoney(lifetimeMoney)} 💵
+    </div>
+    <div style="margin-top:6px; text-align:center; opacity:0.5; font-weight:700; font-size:12px;">
+      Allowance is based on the % of daily points earned, capped at ${fmtMoney(DAILY_MAX_DOLLARS)}/day.
     </div>
   `;
 }
@@ -776,7 +903,8 @@ function attachAdminHandlers(){
     });
     document.getElementById('saveBuddyBtn').addEventListener('click', ()=>{
       const name = document.getElementById('buddyNameInput').value.trim() || 'Buddy';
-      state.buddy.name = name; state.buddy.avatar = chosen;
+      const kidName = document.getElementById('kidNameInput').value.trim();
+      state.buddy.name = name; state.buddy.avatar = chosen; state.kidName = kidName;
       saveState(); render();
     });
   }
@@ -800,6 +928,7 @@ function openTaskForm(taskId){
       <label>Icon</label>
       <div class="emoji-grid" id="formEmojiGrid">
         ${QUICK_EMOJIS.map(e=>`<button class="emoji-pick ${e===emoji?'sel':''}" data-em="${e}">${e}</button>`).join('')}
+        ${CUSTOM_TASK_ICON_KEYS.map(k=>`<button class="emoji-pick ${k===emoji?'sel':''}" data-em="${k}" title="${CUSTOM_AVATARS[k].label}">${avatarPreviewHtml(k,22)}</button>`).join('')}
       </div>
       <button class="btn btn-primary" id="formSave">Save Task</button>
       <button class="btn btn-secondary" id="formCancel">Cancel</button>
@@ -828,6 +957,188 @@ function openTaskForm(taskId){
     overlay.remove();
     render();
   });
+}
+
+/* ================= 3D BUDDY CHARACTER (Three.js) ================= */
+let buddy3D = null; // { renderer, scene, camera, group, mouth, eyes, avatarKey, talking }
+
+function buildCharacterGroup(avatarKey){
+  const style = AVATAR_STYLES[avatarKey] || AVATAR_STYLES['🦊'];
+  const group = new THREE.Group();
+
+  const bodyMat = new THREE.MeshStandardMaterial({ color: style.color, roughness:0.6 });
+  const bellyMat = new THREE.MeshStandardMaterial({ color: style.belly, roughness:0.7 });
+  const darkMat = new THREE.MeshStandardMaterial({ color: 0x2A2A35, roughness:0.4 });
+  const whiteMat = new THREE.MeshStandardMaterial({ color: 0xFFFFFF, roughness:0.4 });
+
+  // Body
+  const body = new THREE.Mesh(new THREE.SphereGeometry(1, 24, 24), bodyMat);
+  body.scale.set(1, 0.92, 0.95);
+  group.add(body);
+
+  // Belly patch
+  const belly = new THREE.Mesh(new THREE.SphereGeometry(0.6, 20, 20), bellyMat);
+  belly.position.set(0, -0.15, 0.78);
+  belly.scale.set(1, 1.1, 0.35);
+  group.add(belly);
+
+  // Eyes (white + pupil), stored for blinking
+  const eyeGroup = new THREE.Group();
+  [-0.36, 0.36].forEach(x=>{
+    const white = new THREE.Mesh(new THREE.SphereGeometry(0.19, 16, 16), whiteMat);
+    white.position.set(x, 0.22, 0.86);
+    const pupil = new THREE.Mesh(new THREE.SphereGeometry(0.09, 12, 12), darkMat);
+    pupil.position.set(x, 0.22, 0.99);
+    eyeGroup.add(white, pupil);
+  });
+  group.add(eyeGroup);
+
+  // Mouth (flattened sphere, scales vertically to talk)
+  const mouth = new THREE.Mesh(new THREE.SphereGeometry(0.22, 16, 16), darkMat);
+  mouth.position.set(0, -0.28, 0.9);
+  mouth.scale.set(1, 0.25, 0.4);
+  group.add(mouth);
+
+  // Cheeks (blush)
+  const cheekMat = new THREE.MeshStandardMaterial({ color: 0xFFB3B3, roughness:0.8, transparent:true, opacity:0.7 });
+  [-0.58, 0.58].forEach(x=>{
+    const cheek = new THREE.Mesh(new THREE.SphereGeometry(0.12, 12, 12), cheekMat);
+    cheek.position.set(x, 0.0, 0.82);
+    cheek.scale.set(1,0.7,0.3);
+    group.add(cheek);
+  });
+
+  // Ears / head features by type
+  const earMat = bodyMat;
+  if (style.ear === 'pointy') {
+    [-0.55, 0.55].forEach(x=>{
+      const ear = new THREE.Mesh(new THREE.ConeGeometry(0.28, 0.5, 12), earMat);
+      ear.position.set(x, 0.95, 0.1);
+      ear.rotation.z = x < 0 ? 0.25 : -0.25;
+      group.add(ear);
+    });
+  } else if (style.ear === 'round' || style.ear === 'roundBig') {
+    const r = style.ear === 'roundBig' ? 0.34 : 0.26;
+    [-0.62, 0.62].forEach(x=>{
+      const ear = new THREE.Mesh(new THREE.SphereGeometry(r, 14, 14), earMat);
+      ear.position.set(x, 0.88, 0.05);
+      group.add(ear);
+    });
+  } else if (style.ear === 'roundSmall') {
+    [-0.68, 0.68].forEach(x=>{
+      const ear = new THREE.Mesh(new THREE.SphereGeometry(0.18, 14, 14), earMat);
+      ear.position.set(x, 0.82, 0.0);
+      group.add(ear);
+    });
+  } else if (style.ear === 'roundBlack') {
+    [-0.62, 0.62].forEach(x=>{
+      const ear = new THREE.Mesh(new THREE.SphereGeometry(0.28, 14, 14), darkMat);
+      ear.position.set(x, 0.88, 0.05);
+      group.add(ear);
+    });
+  } else if (style.ear === 'long') {
+    [-0.42, 0.42].forEach(x=>{
+      const ear = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.16, 0.85, 12), earMat);
+      ear.position.set(x, 1.15, 0.05);
+      ear.rotation.z = x < 0 ? 0.1 : -0.1;
+      group.add(ear);
+    });
+  } else if (style.ear === 'horn') {
+    const horn = new THREE.Mesh(new THREE.ConeGeometry(0.14, 0.55, 12), new THREE.MeshStandardMaterial({ color:0xFFD166 }));
+    horn.position.set(0, 1.1, 0.35);
+    horn.rotation.z = 0.1;
+    group.add(horn);
+  } else if (style.ear === 'wings') {
+    [-0.9, 0.9].forEach(x=>{
+      const wing = new THREE.Mesh(new THREE.ConeGeometry(0.35, 0.6, 6), earMat);
+      wing.position.set(x, 0.4, -0.2);
+      wing.rotation.z = x < 0 ? 1.3 : -1.3;
+      group.add(wing);
+    });
+  }
+
+  if (style.glasses) {
+    const frameMat = new THREE.MeshStandardMaterial({ color: 0x2A2A6E, roughness:0.3 });
+    [-0.36, 0.36].forEach(x=>{
+      const ring = new THREE.Mesh(new THREE.TorusGeometry(0.22, 0.03, 10, 24), frameMat);
+      ring.position.set(x, 0.22, 0.95);
+      group.add(ring);
+    });
+    const bridge = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.16, 8), frameMat);
+    bridge.rotation.z = Math.PI/2;
+    bridge.position.set(0, 0.22, 0.97);
+    group.add(bridge);
+  }
+
+  group.userData = { eyeGroup, mouth };
+  return group;
+}
+
+function ensureBuddy3D(container){
+  const avatarKey = state.buddy.avatar;
+  if (buddy3D && buddy3D.avatarKey === avatarKey) return buddy3D;
+
+  // Rebuild character (avatar changed or first run)
+  if (!buddy3D) {
+    const renderer = new THREE.WebGLRenderer({ antialias:true, alpha:true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio||1, 2));
+    renderer.setSize(180, 180);
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(32, 1, 0.1, 20);
+    camera.position.set(0, 0.15, 4.2);
+    const key = new THREE.DirectionalLight(0xffffff, 1.0); key.position.set(2,3,4); scene.add(key);
+    const amb = new THREE.AmbientLight(0xffffff, 0.65); scene.add(amb);
+    buddy3D = { renderer, scene, camera, group:null, avatarKey:null, talking:false, blinkT:0, mounted:false };
+    startBuddyLoop();
+  }
+  if (buddy3D.group) buddy3D.scene.remove(buddy3D.group);
+  const group = buildCharacterGroup(avatarKey);
+  buddy3D.scene.add(group);
+  buddy3D.group = group;
+  buddy3D.avatarKey = avatarKey;
+  return buddy3D;
+}
+
+function mountBuddy3D(containerId){
+  if (typeof THREE === 'undefined') return; // library still loading; skip gracefully
+  const container = document.getElementById(containerId);
+  if (!container) return;
+  const b = ensureBuddy3D(container);
+  if (b.renderer.domElement.parentElement !== container) {
+    container.innerHTML = '';
+    container.appendChild(b.renderer.domElement);
+  }
+}
+
+function startBuddyLoop(){
+  function tick(){
+    requestAnimationFrame(tick);
+    if (!buddy3D || !buddy3D.group) return;
+    const t = performance.now() / 1000;
+    buddy3D.group.rotation.y = Math.sin(t*0.6) * 0.18;
+    buddy3D.group.position.y = Math.sin(t*1.4) * 0.05;
+
+    // Blink every ~4s
+    const blinkPhase = (t % 4);
+    const blink = blinkPhase > 3.85 ? 0.15 : 1;
+    if (buddy3D.group.userData.eyeGroup) buddy3D.group.userData.eyeGroup.scale.y = blink;
+
+    // Mouth talk animation
+    const mouth = buddy3D.group.userData.mouth;
+    if (mouth) {
+      if (buddy3D.talking) {
+        mouth.scale.y = 0.2 + Math.abs(Math.sin(t*14)) * 0.55;
+      } else {
+        mouth.scale.y = 0.25;
+      }
+    }
+    buddy3D.renderer.render(buddy3D.scene, buddy3D.camera);
+  }
+  requestAnimationFrame(tick);
+}
+
+function setBuddyTalking(isTalking){
+  if (buddy3D) buddy3D.talking = isTalking;
 }
 
 loadState();

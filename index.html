@@ -809,6 +809,10 @@ function renderAdminTasks(){
   const sorted = [...state.tasks].sort((a,b)=>a.time.localeCompare(b.time));
   return `
     <button class="btn btn-secondary" id="enableNotifsBtn">🔔 Turn On Real Notifications</button>
+    <div style="display:flex; gap:8px; margin-top:8px;">
+      <button class="btn btn-secondary" id="backupBtn" style="margin-top:0;">💾 Backup</button>
+      <button class="btn btn-secondary" id="restoreBtn" style="margin-top:0;">♻️ Restore</button>
+    </div>
     <button class="btn btn-primary" id="addTaskBtn">+ Add a Task</button>
     <div style="margin-top:16px;">
       ${sorted.map(t=>`
@@ -886,6 +890,8 @@ function attachAdminHandlers(){
         alert('Could not request permission. Make sure the OneSignal App ID is set up (see SETUP_GUIDE).');
       }
     });
+    document.getElementById('backupBtn').addEventListener('click', openBackupModal);
+    document.getElementById('restoreBtn').addEventListener('click', openRestoreModal);
     document.querySelectorAll('[data-edit]').forEach(b=> b.addEventListener('click', ()=> openTaskForm(b.dataset.edit)));
     document.querySelectorAll('[data-del]').forEach(b=> b.addEventListener('click', ()=>{
       state.tasks = state.tasks.filter(t=>t.id!==b.dataset.del);
@@ -1139,6 +1145,75 @@ function startBuddyLoop(){
 
 function setBuddyTalking(isTalking){
   if (buddy3D) buddy3D.talking = isTalking;
+}
+
+/* ================= BACKUP & RESTORE ================= */
+function openBackupModal(){
+  const json = JSON.stringify(state);
+  const overlay = document.createElement('div');
+  overlay.className = 'overlay center';
+  overlay.innerHTML = `
+    <div class="sheet" style="text-align:center; position:relative;">
+      <button class="close-x" id="closeBackup">✕</button>
+      <div style="font-size:40px;">💾</div>
+      <h2 style="margin:4px 0 6px;">Backup Your Data</h2>
+      <p style="opacity:0.7; font-weight:600; font-size:13px; margin-bottom:10px;">
+        Copy this text and save it somewhere safe (Notes app, email to yourself).
+        If anything ever gets wiped, paste it back in using Restore.
+      </p>
+      <textarea id="backupText" readonly style="width:100%; height:140px; border-radius:12px; border:2px solid #E3E8F5; padding:10px; font-size:11px; font-family:monospace;">${json}</textarea>
+      <button class="btn btn-primary" id="copyBackupBtn">📋 Copy to Clipboard</button>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  document.getElementById('closeBackup').addEventListener('click', ()=> overlay.remove());
+  document.getElementById('copyBackupBtn').addEventListener('click', async ()=>{
+    const ta = document.getElementById('backupText');
+    ta.select();
+    try {
+      await navigator.clipboard.writeText(json);
+      document.getElementById('copyBackupBtn').textContent = '✅ Copied!';
+    } catch(e) {
+      document.execCommand('copy');
+      document.getElementById('copyBackupBtn').textContent = '✅ Copied!';
+    }
+  });
+}
+
+function openRestoreModal(){
+  const overlay = document.createElement('div');
+  overlay.className = 'overlay center';
+  overlay.innerHTML = `
+    <div class="sheet" style="text-align:center; position:relative;">
+      <button class="close-x" id="closeRestore">✕</button>
+      <div style="font-size:40px;">♻️</div>
+      <h2 style="margin:4px 0 6px;">Restore From Backup</h2>
+      <p style="opacity:0.7; font-weight:600; font-size:13px; margin-bottom:10px;">
+        Paste a backup you saved earlier. This will replace everything currently in the app.
+      </p>
+      <textarea id="restoreText" placeholder="Paste your backup text here..." style="width:100%; height:140px; border-radius:12px; border:2px solid #E3E8F5; padding:10px; font-size:11px; font-family:monospace;"></textarea>
+      <button class="btn btn-primary" id="doRestoreBtn">Restore</button>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  document.getElementById('closeRestore').addEventListener('click', ()=> overlay.remove());
+  document.getElementById('doRestoreBtn').addEventListener('click', ()=>{
+    const raw = document.getElementById('restoreText').value.trim();
+    try {
+      const parsed = JSON.parse(raw);
+      if (!parsed.tasks || !parsed.buddy) throw new Error('not a valid backup');
+      state = parsed;
+      if (state.kidName === undefined) state.kidName = '';
+      if (state.lastWeeklySummaryShown === undefined) state.lastWeeklySummaryShown = null;
+      saveState();
+      overlay.remove();
+      view = 'buddy';
+      render();
+      alert('Restored! Your tasks and progress are back.');
+    } catch(e) {
+      alert("That doesn't look like a valid backup. Make sure you pasted the full text.");
+    }
+  });
 }
 
 loadState();
